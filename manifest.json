@@ -1,16 +1,38 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Commute Time",
-  "version": "1.0.3",
+  "version": "1.2.0",
   "description": "Shows commute time from your home to each job on LinkedIn's job search page.",
   "permissions": ["storage", "tabs", "scripting"],
-  "host_permissions": ["https://maps.googleapis.com/*", "https://api.geoapify.com/*", "https://9292.nl/*"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "host_permissions": [
+    "https://api.openrouteservice.org/*",
+    "https://maps.googleapis.com/*",
+    "https://9292.nl/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["cities_by_country.json", "db.json"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LinkedIn Commute Time settings"
+    "default_title": "LinkedIn Commute Time settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {

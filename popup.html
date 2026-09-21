@@ -19,336 +19,300 @@
     --green-dim: rgba(63, 185, 80, 0.12);
     --red: #f85149;
     --red-dim: rgba(248, 81, 73, 0.12);
+    --yellow: #d29922;
     --radius: 8px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    width: 340px;
+    width: 360px;
     background: var(--bg);
     color: var(--text);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.5;
-    padding: 0;
     overflow-x: hidden;
   }
 
-  /* -- Header -- */
+  /* ── Header ── */
   .header {
-    padding: 20px 20px 16px;
+    padding: 14px 20px 10px;
     background: linear-gradient(135deg, #1e3a5f 0%, #1b1f23 100%);
     border-bottom: 1px solid var(--border);
   }
-  .header h1 {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.02em;
-  }
-  .header p {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
+  .header h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+  .header p  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
-  /* -- Sections -- */
+  /* ── Mode Tabs ── */
+  .mode-tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .mode-tab {
+    flex: 1; padding: 9px 0;
+    font-size: 11px; font-weight: 600; font-family: inherit;
+    text-align: center; background: none; border: none;
+    color: var(--text-muted); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .mode-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .mode-tab:hover:not(.active) { color: var(--text); }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Sections ── */
   .section {
-    padding: 16px 20px;
+    padding: 12px 20px;
     border-bottom: 1px solid var(--border);
   }
   .section:last-child { border-bottom: none; }
 
   .section-title {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-muted); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
   }
 
-  /* -- Inputs -- */
-  .input-row {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-  }
+  /* ── Inputs ── */
+  .field { margin-bottom: 8px; }
+  .field:last-child { margin-bottom: 0; }
 
-  input[type="text"] {
-    flex: 1;
-    padding: 8px 10px;
-    font-size: 12px;
-    font-family: inherit;
-    color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
+  .field-label {
+    font-size: 10px; color: var(--text-muted);
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
   }
-  input[type="text"]:focus {
+  .field-label .saved-hint {
+    color: var(--green); font-size: 10px; opacity: 0;
+    transition: opacity .3s;
+  }
+  .field-label .saved-hint.show { opacity: 1; }
+
+  input[type="text"], input[type="password"], select, textarea {
+    width: 100%; padding: 7px 10px;
+    font-size: 12px; font-family: inherit;
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus, textarea:focus {
     border-color: var(--border-focus);
     box-shadow: 0 0 0 3px var(--accent-dim);
   }
-  input[type="text"]::placeholder { color: var(--text-muted); }
+  input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
-  /* -- Buttons -- */
+  select {
+    cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b949e' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
+  }
+  select option { background: #2d333a; }
+
+  textarea { resize: none; font-size: 11px; line-height: 1.5; }
+
+  /* ── Buttons ── */
   .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 8px 14px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: inherit;
-    border: none;
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 5px; padding: 8px 14px;
+    font-size: 11px; font-weight: 600; font-family: inherit;
+    border: none; border-radius: var(--radius);
+    cursor: pointer; transition: all .15s; white-space: nowrap;
   }
-  .btn-accent {
-    background: var(--accent);
-    color: #fff;
-  }
-  .btn-accent:hover { background: #3d8be0; }
-
-  .btn-green {
-    background: var(--green-dim);
-    color: var(--green);
-    border: 1px solid rgba(63, 185, 80, 0.2);
-  }
-  .btn-green:hover { background: rgba(63, 185, 80, 0.2); }
-
-  .btn-red {
-    background: var(--red-dim);
-    color: var(--red);
-    border: 1px solid rgba(248, 81, 73, 0.2);
-  }
-  .btn-red:hover { background: rgba(248, 81, 73, 0.2); }
-
-  .btn-ghost {
-    background: var(--surface);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-  }
-  .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
-
-  .btn-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-  }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-accent  { background: var(--accent); color: #fff; }
+  .btn-accent:hover:not(:disabled) { background: #3d8be0; }
+  .btn-green   { background: var(--green-dim); color: var(--green); border: 1px solid rgba(63,185,80,.2); }
+  .btn-green:hover:not(:disabled) { background: rgba(63,185,80,.22); }
+  .btn-red     { background: var(--red-dim); color: var(--red); border: 1px solid rgba(248,81,73,.2); }
+  .btn-red:hover:not(:disabled) { background: rgba(248,81,73,.22); }
+  .btn-ghost   { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+  .btn-full    { width: 100%; }
+  .btn-row     { display: flex; gap: 8px; }
   .btn-row .btn { flex: 1; }
 
-  /* -- File upload zone -- */
+  /* ── Provider toggle ── */
+  .provider-row { display: flex; gap: 6px; }
+  .provider-btn {
+    flex: 1; padding: 8px 6px; text-align: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer;
+    transition: all .15s; font-family: inherit;
+  }
+  .provider-btn .pb-name { font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; }
+  .provider-btn .pb-tag  { font-size: 10px; margin-top: 2px; display: block; }
+  .provider-btn.active   { border-color: var(--accent); background: var(--accent-dim); }
+  .provider-btn.active .pb-name { color: var(--accent); }
+  .provider-btn:hover:not(.active) .pb-name { color: var(--text); }
+
+  /* ── Transport grid ── */
+  .transport-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .transport-btn {
+    padding: 7px 4px; text-align: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer;
+    font-size: 12px; font-weight: 600; font-family: inherit;
+    color: var(--text-muted); transition: all .15s;
+  }
+  .transport-btn.active {
+    background: var(--accent-dim); border-color: var(--accent); color: var(--accent);
+  }
+  .transport-btn.unavailable { opacity: 0.35; cursor: not-allowed; }
+  .transport-btn:hover:not(.active):not(.unavailable) { background: var(--surface-hover); color: var(--text); }
+
+  /* ── Log area ── */
+  .log-box {
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 10px;
+    height: 110px; overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px;
+    line-height: 1.7; color: var(--text-muted);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log-box .log-ok   { color: var(--green); }
+  .log-box .log-err  { color: var(--red); }
+  .log-box .log-info { color: var(--accent); }
+  .log-box-wrap { display: none; margin-top: 10px; }
+  .log-box-wrap.visible { display: block; }
+
+  /* ── CSV upload ── */
   .upload-zone {
-    position: relative;
-    border: 1.5px dashed rgba(255,255,255,0.12);
-    border-radius: var(--radius);
-    padding: 16px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    background: var(--surface);
-    margin-top: 8px;
+    position: relative; border: 1.5px dashed rgba(255,255,255,.12);
+    border-radius: var(--radius); padding: 14px;
+    text-align: center; cursor: pointer;
+    transition: all .2s; background: var(--surface);
   }
-  .upload-zone:hover {
-    border-color: var(--accent);
-    background: var(--accent-dim);
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: var(--accent-dim);
   }
-  .upload-zone.dragover {
-    border-color: var(--accent);
-    background: var(--accent-dim);
-  }
-  .upload-zone input[type="file"] {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .upload-icon {
-    width: 28px;
-    height: 28px;
-    margin: 0 auto 6px;
-    opacity: 0.4;
-  }
-  .upload-text {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
+  .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { width: 24px; height: 24px; margin: 0 auto 5px; opacity: 0.4; }
+  .upload-text { font-size: 11px; color: var(--text-muted); }
   .upload-text strong { color: var(--accent); }
 
-  /* -- Info tooltip -- */
+  /* ── Info icon ── */
   .info-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--accent-dim);
-    color: var(--accent);
-    font-size: 10px;
-    font-weight: 700;
-    cursor: help;
-    position: relative;
-    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent-dim); color: var(--accent);
+    font-size: 9px; font-weight: 700; cursor: help;
+    position: relative; flex-shrink: 0;
   }
   .info-tooltip {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: 260px;
-    padding: 12px;
-    background: #2d333a;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    z-index: 100;
-    text-align: left;
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--text);
+    /* Reset inherited text styles from .section-title */
+    text-transform: none; letter-spacing: normal; font-weight: 400;
+    display: none; position: absolute;
+    bottom: calc(100% + 8px); left: 0; transform: translateX(-10px);
+    width: 240px; max-width: calc(360px - 40px);
+    padding: 10px; background: #2d333a;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); z-index: 9999;
+    font-size: 11px; line-height: 1.5; color: var(--text);
   }
   .info-tooltip::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 6px solid transparent;
-    border-top-color: #2d333a;
+    content: ''; position: absolute; top: 100%; left: 14px;
+    border: 6px solid transparent; border-top-color: #2d333a;
   }
   .info-icon:hover .info-tooltip { display: block; }
+  .info-tooltip strong { color: var(--accent); }
   .info-tooltip code {
-    display: block;
-    margin-top: 6px;
-    padding: 8px;
-    background: rgba(0,0,0,0.3);
-    border-radius: 4px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 10px;
-    color: var(--green);
-    white-space: pre;
-    line-height: 1.6;
-  }
-  .info-tooltip .tip-label {
-    font-weight: 600;
-    color: var(--accent);
-    margin-bottom: 4px;
+    display: block; margin-top: 6px; padding: 6px 8px;
+    background: rgba(0,0,0,.3); border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px;
+    color: var(--green); white-space: pre; line-height: 1.6;
   }
 
-  /* -- Status -- */
+  /* ── Status text ── */
   .status-text {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 8px;
-    min-height: 16px;
-    transition: color 0.2s;
+    font-size: 11px; color: var(--text-muted);
+    margin-top: 7px; min-height: 15px; transition: color .2s;
   }
   .status-text.success { color: var(--green); }
-  .status-text.error { color: var(--red); }
+  .status-text.error   { color: var(--red); }
+  .status-text.warn    { color: var(--yellow); }
 
-  /* -- Tracker stats -- */
-  .tracker-stats {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 10px;
-  }
+  /* ── Tracker stats ── */
+  .tracker-stats { display: flex; gap: 8px; margin-bottom: 10px; }
   .stat-card {
-    flex: 1;
-    padding: 10px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    text-align: center;
+    flex: 1; padding: 8px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); text-align: center;
   }
-  .stat-number {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text);
-    line-height: 1.2;
-  }
-  .stat-label {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
+  .stat-number { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .stat-label  { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 1px; }
   .stat-card.applied .stat-number { color: var(--red); }
-  .stat-card.viewed .stat-number { color: #d29922; }
-  .stat-card.total .stat-number { color: var(--accent); }
+  .stat-card.viewed  .stat-number { color: var(--yellow); }
+  .stat-card.total   .stat-number { color: var(--accent); }
 </style>
 </head>
 <body>
 
-  <!-- Header -->
-  <div class="header">
+<!-- Header -->
+<div class="header" style="display:flex;align-items:center;gap:12px;">
+  <img src="icons/icon48.png" alt="Logo" style="width:36px;height:36px;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3);flex-shrink:0;" />
+  <div>
     <h1>Commute Time</h1>
     <p>LinkedIn job commute and application tracker</p>
   </div>
+</div>
+
+<!-- Mode Tabs -->
+<div class="mode-tabs">
+  <button class="mode-tab active" id="tabCsv">Upload File</button>
+  <button class="mode-tab"        id="tabApi">Auto-Calculate</button>
+</div>
+
+<!-- ═══════════ CSV PANEL ═══════════ -->
+<div id="panelCsv" class="panel active">
 
   <!-- Home City -->
   <div class="section">
     <div class="section-title">Home City</div>
-    <div class="input-row">
-      <input type="text" id="homeCity" placeholder="e.g. Rotterdam" />
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="homeCity" placeholder="e.g. Rotterdam" style="flex:1;" />
       <button class="btn btn-accent" id="saveHomeCity">Save</button>
     </div>
-    <p class="status-text" style="font-size:10px; margin-top:4px; color: var(--text-muted);">Your home city will show as 0m commute.</p>
+    <p class="status-text" id="homeCityStatus" style="font-size:10px;margin-top:4px;">Your home city will show as 0m commute.</p>
   </div>
 
   <!-- CSV Upload -->
   <div class="section">
     <div class="section-title">
-      Travel Times Data
-      <span class="info-icon">
-        ?
+      Travel Times File
+      <span class="info-icon">?
         <div class="info-tooltip">
-          <div class="tip-label">Required CSV format</div>
-          Your CSV must have these columns:
+          <strong>Required CSV format:</strong>
           <code>Origin,Destination,Travel_Time
 Rotterdam,Amsterdam,45m
-Rotterdam,Utrecht,30m
-Rotterdam,Den Haag,25m</code>
-          <br>
-          <strong>Origin</strong> is optional but auto-detects your home city.<br>
-          <strong>Destination</strong> and <strong>Travel_Time</strong> are required.
+Rotterdam,Utrecht,30m</code>
+          <strong>Destination</strong> and <strong>Travel_Time</strong> are required.<br>
+          <strong>Origin</strong> is optional — auto-sets your home city.
         </div>
       </span>
     </div>
-
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="csvFile" accept=".csv" />
       <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
+        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
-      <div class="upload-text">
-        <strong>Click to upload</strong> or drag and drop<br>
-        .csv files only
-      </div>
+      <div class="upload-text"><strong>Click to upload</strong> or drag & drop · .csv only</div>
     </div>
-
     <p id="status" class="status-text"></p>
-
-    <div class="btn-row">
-      <button class="btn btn-red" id="clearData">Clear Custom Data</button>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-red" id="clearData">Clear Data</button>
     </div>
   </div>
 
-  <!-- Application Tracker -->
+  <!-- Application Tracker (only shown on Upload File tab) -->
   <div class="section">
     <div class="section-title">Application Tracker</div>
     <div class="tracker-stats">
@@ -367,10 +331,96 @@ Rotterdam,Den Haag,25m</code>
     </div>
     <div class="btn-row" style="margin-top:0;">
       <button class="btn btn-green" id="exportTracker">Export CSV</button>
-      <button class="btn btn-red" id="clearTracker">Clear History</button>
+      <button class="btn btn-red"   id="clearTracker">Clear History</button>
     </div>
   </div>
 
-  <script src="popup.js"></script>
+</div>
+
+<!-- ═══════════ API PANEL ═══════════ -->
+<div id="panelApi" class="panel">
+
+  <!-- Provider -->
+  <div class="section">
+    <div class="section-title">Provider</div>
+    <div class="provider-row">
+      <button class="provider-btn active" data-provider="ors">
+        <span class="pb-name">OpenRouteService</span>
+        <span class="pb-tag" style="color:var(--green);">Free · No card needed</span>
+      </button>
+      <button class="provider-btn" data-provider="google">
+        <span class="pb-name">Google Maps</span>
+        <span class="pb-tag" style="color:var(--yellow);">Paid · Has transit</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="section">
+    <div class="field">
+      <div class="field-label">
+        <span id="apiKeyLabel">API Key</span>
+        <span class="info-icon">?
+          <div class="info-tooltip" id="apiKeyTooltip">
+            <strong>OpenRouteService (Free)</strong><br>
+            Sign up at openrouteservice.org — free tier: 2000 directions/day, 3000 geocoding/day. No credit card.
+          </div>
+        </span>
+        <span class="saved-hint" id="apiKeySaved">✓ saved</span>
+      </div>
+      <input type="password" id="orsKey" placeholder="Paste your API key" />
+    </div>
+    <div class="field">
+      <div class="field-label">
+        Home address / zipcode
+        <span class="saved-hint" id="homeSaved">✓ saved</span>
+      </div>
+      <input type="text" id="homeAddress" placeholder="e.g. 3011 Rotterdam" />
+    </div>
+  </div>
+
+  <!-- Transport -->
+  <div class="section">
+    <div class="section-title">Transport Mode</div>
+    <div class="transport-grid">
+      <button class="transport-btn active" data-profile="car">Car</button>
+      <button class="transport-btn" data-profile="cycling">Cycling</button>
+      <button class="transport-btn" data-profile="walking">Walking</button>
+      <button class="transport-btn unavailable" data-profile="transit" title="Requires Google Maps">Transit</button>
+    </div>
+    <p id="transitNote" style="font-size:10px;color:var(--text-muted);margin-top:5px;display:none;">
+      Transit requires a <strong>Google Maps</strong> key.
+    </p>
+  </div>
+
+  <!-- Fetch -->
+  <div class="section">
+    <div class="section-title">Fetch Commute Times</div>
+    <div class="field">
+      <div class="field-label">Country</div>
+      <select id="countrySelect">
+        <option value="">— Select a country —</option>
+      </select>
+    </div>
+    <button class="btn btn-accent btn-full" id="fetchBtn" style="margin-top:4px;">Fetch &amp; Apply</button>
+    <button class="btn btn-red btn-full" id="stopFetchBtn" style="display:none;margin-top:6px;">Stop</button>
+
+    <!-- Log -->
+    <div class="log-box-wrap" id="logWrap">
+      <div class="log-box" id="logBox"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span id="logSummary" style="font-size:10px;color:var(--text-muted);"></span>
+        <button class="btn btn-green" id="exportApiCsv" style="display:none;padding:5px 10px;font-size:10px;">Export CSV</button>
+      </div>
+    </div>
+
+    <div style="margin-top:8px;text-align:right;">
+      <button class="btn btn-ghost" id="clearApiData" style="font-size:10px;padding:4px 10px;">Clear saved data</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="popup.js"></script>
 </body>
 </html>
