@@ -128,19 +128,59 @@ def test_profile_migration():
 test("Storage migration: old ORS profile names → generic names", test_profile_migration)
 
 def test_csv_export():
-    """Simulate CSV export from customDb"""
+    """Simulate CSV export from customDb with transport mode"""
     fake_db = {"amsterdam": "35m", "rotterdam": "0m", "den-haag": "25m", "munchen": "8h 20m"}
     home = "3011 Rotterdam"
     origin = home.split(",")[0].strip()
-    rows = ["Origin,Destination,Travel_Time"]
+    profile = "car"
+    rows = ["Origin,Destination,Travel_Time,Mode"]
     for dest_slug, time in fake_db.items():
         dest_label = dest_slug.replace("-", " ").title()
-        rows.append(f"{origin},{dest_label},{time}")
+        rows.append(f"{origin},{dest_label},{time},{profile}")
     csv = "\n".join(rows)
-    assert "Rotterdam,Amsterdam,35m" in csv
-    assert "Rotterdam,Den Haag,25m" in csv
-    assert "Rotterdam,Munchen,8h 20m" in csv
-test("CSV export produces correct format", test_csv_export)
+    assert "Rotterdam,Amsterdam,35m,car" in csv
+    assert "Rotterdam,Den Haag,25m,car" in csv
+    assert "Rotterdam,Munchen,8h 20m,car" in csv
+test("CSV export produces correct format with Mode", test_csv_export)
+
+def test_csv_import_mode():
+    """Simulate CSV import detecting Mode column"""
+    csv_text = "Origin,Destination,Travel_Time,Mode\nRotterdam,Utrecht,25m,car\n"
+    lines = csv_text.strip().split("\n")
+    headers = [h.strip().replace('"', '') for h in lines[0].split(",")]
+    mode_idx = next((i for i, h in enumerate(headers) if re.match(r"^(mode|transport|transport_mode|profile)$", h, re.I)), -1)
+    assert mode_idx == 3
+    row = lines[1].split(",")
+    val = row[mode_idx].lower()
+    detected = None
+    if "car" in val: detected = "car"
+    elif "cycl" in val: detected = "cycling"
+    elif "walk" in val: detected = "walking"
+    elif "transit" in val: detected = "transit"
+    assert detected == "car"
+test("CSV import detects transport Mode column", test_csv_import_mode)
+
+def test_dynamic_transport_icons():
+    """Test dynamic icons mapping and badge regex stripping"""
+    PROFILE_ICONS = {
+        "car": "🚗",
+        "cycling": "🚴",
+        "walking": "🚶",
+        "transit": "🚆",
+    }
+    assert PROFILE_ICONS["car"] == "🚗"
+    assert PROFILE_ICONS["cycling"] == "🚴"
+    assert PROFILE_ICONS["walking"] == "🚶"
+    assert PROFILE_ICONS["transit"] == "🚆"
+
+    # Regex stripping badge from card title
+    r = re.compile(r"[🚆🚗🚴🚶🚌]\s*\d+[hm]\s*\d*[m]?")
+    for profile, icon in PROFILE_ICONS.items():
+        badge_text = f"{icon} 35m"
+        line = f"Software Engineer {badge_text}"
+        cleaned = r.sub("", line).strip()
+        assert cleaned == "Software Engineer", f"Failed to strip {badge_text}"
+test("Transport icons mapping and badge stripping regex", test_dynamic_transport_icons)
 
 def test_db_lookup():
     """Simulate handleGetCommuteTimes lookup logic"""

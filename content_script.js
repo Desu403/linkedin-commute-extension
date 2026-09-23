@@ -61,10 +61,58 @@ function requestCommuteTimes(locations) {
   }
 }
 
+const PROFILE_ICONS = {
+  car: "🚗",
+  cycling: "🚴",
+  walking: "🚶",
+  transit: "🚆",
+};
+
+let currentTransportIcon = "🚆";
+
+async function updateCurrentTransportIcon() {
+  try {
+    const { transportProfile, customDb } = await browserAPI.storage.local.get([
+      "transportProfile",
+      "customDb",
+    ]);
+    if (transportProfile && PROFILE_ICONS[transportProfile]) {
+      currentTransportIcon = PROFILE_ICONS[transportProfile];
+    } else if (customDb && Object.keys(customDb).length > 0) {
+      currentTransportIcon = "🚗";
+    } else {
+      currentTransportIcon = "🚆";
+    }
+  } catch (e) {
+    currentTransportIcon = "🚆";
+  }
+}
+
+function refreshAllBadges() {
+  const badges = document.querySelectorAll(".commute-badge");
+  for (const badge of badges) {
+    const text = badge.textContent || "";
+    const match = text.match(/\d+[hm].*$/);
+    if (match) {
+      badge.textContent = `${currentTransportIcon} ${match[0]}`;
+    }
+  }
+}
+
+if (browserAPI.storage?.onChanged) {
+  browserAPI.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && (changes.transportProfile || changes.customDb)) {
+      updateCurrentTransportIcon().then(() => {
+        refreshAllBadges();
+      });
+    }
+  });
+}
+
 function injectBadge(afterEl, timeText) {
   const badge = document.createElement("span");
   badge.className = "commute-badge";
-  badge.textContent = `🚆 ${timeText}`;
+  badge.textContent = `${currentTransportIcon} ${timeText}`;
   afterEl.appendChild(badge);
 }
 
@@ -130,6 +178,7 @@ function getJobCards() {
 }
 
 async function processVisibleJobs() {
+  await updateCurrentTransportIcon();
   const locations = new Map(); // sanitized location -> [{container, locEl}]
 
   const cards = getJobCards();
@@ -197,7 +246,7 @@ function extractCardInfo(container) {
   const SKIP_RE = /^(Promoted|Easy Apply|Applied|Saved|Viewed|Hide|Dismiss|More options)$/i;
   for (const line of lines) {
     // Strip any injected badge text so it doesn't corrupt the key
-    const clean = line.replace(/[\U0001F686]\s*\d+[hm]\s*\d*[m]?/g, "").replace(/Applied \d+ \w+/g, "").replace(/Viewed \d+ \w+/g, "").replace(/\s*[·]\s*/g, " ").trim();
+    const clean = line.replace(/[🚆🚗🚴🚶🚌]\s*\d+[hm]\s*\d*[m]?/gu, "").replace(/Applied \d+ \w+/g, "").replace(/Viewed \d+ \w+/g, "").replace(/\s*[·]\s*/g, " ").trim();
     if (!clean) continue;
     if (!title && clean.length > 2 && clean.length < 120 && !SKIP_RE.test(clean)) {
       title = clean;

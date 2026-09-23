@@ -267,7 +267,7 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
         fetchState.saved++;
         addLog(`${city.name}: ${time}`);
         if (fetchState.saved % 10 === 0) {
-          await browserAPI.storage.local.set({ customDb: db });
+          await browserAPI.storage.local.set({ customDb: db, transportProfile: profile });
         }
       } else {
         addLog(`${city.name}: no route found`);
@@ -278,7 +278,7 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
     }
   }
 
-  await browserAPI.storage.local.set({ customDb: db });
+  await browserAPI.storage.local.set({ customDb: db, transportProfile: profile });
   fetchState.done    = cities.length;
   fetchState.running = false;
   addLog(`Finished: ${fetchState.saved} / ${cities.length} cities saved.`);

@@ -76,13 +76,14 @@ function handleCSVFile(file) {
   reader.onload = async evt => {
     try {
       const lines   = evt.target.result.split("\n");
-      const headers = lines[0].split(",").map(h => h.trim());
+      const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ''));
       const destIdx = headers.indexOf("Destination");
       const timeIdx = headers.indexOf("Travel_Time");
+      const modeIdx = headers.findIndex(h => /^(mode|transport|transport_mode|profile)$/i.test(h));
       if (destIdx === -1 || timeIdx === -1)
         throw new Error("CSV must have 'Destination' and 'Travel_Time' columns.");
 
-      const db = {}; let autoOrigin = null;
+      const db = {}; let autoOrigin = null; let detectedMode = null;
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim(); if (!line) continue;
         const vals = []; let cur = "", inQ = false;
@@ -97,6 +98,13 @@ function handleCSVFile(file) {
           autoOrigin = vals[oi].toLowerCase().replace(/netherlands/g,"").replace(/on-site/g,"")
             .trim().split(",")[0].trim().replace(/\s+/g,"-");
         }
+        if (modeIdx !== -1 && vals[modeIdx] && !detectedMode) {
+          const m = vals[modeIdx].toLowerCase();
+          if (m.includes("car") || m.includes("driving") || m.includes("🚗")) detectedMode = "car";
+          else if (m.includes("cycl") || m.includes("bike") || m.includes("bicycl") || m.includes("🚴")) detectedMode = "cycling";
+          else if (m.includes("walk") || m.includes("foot") || m.includes("🚶")) detectedMode = "walking";
+          else if (m.includes("transit") || m.includes("train") || m.includes("bus") || m.includes("🚆")) detectedMode = "transit";
+        }
         if (vals.length > Math.max(destIdx, timeIdx)) {
           let dest = vals[destIdx], time = vals[timeIdx];
           if (time && time !== "N/A" && time !== "No Results" && time.trim()) {
@@ -109,8 +117,12 @@ function handleCSVFile(file) {
       if (!Object.keys(db).length) throw new Error("No valid data found.");
       const toSet = { customDb: db };
       if (autoOrigin) { toSet.homeCity = autoOrigin; homeCityEl.value = autoOrigin; }
+      if (detectedMode) {
+        toSet.transportProfile = detectedMode;
+        transportBtns.forEach(b => b.classList.toggle("active", b.dataset.profile === detectedMode));
+      }
       await browserAPI.storage.local.set(toSet);
-      setStatus(csvStatus, `Loaded ${Object.keys(db).length} locations.`, "success");
+      setStatus(csvStatus, `Loaded ${Object.keys(db).length} locations${detectedMode ? ` (${detectedMode})` : ""}.`, "success");
     } catch (err) { setStatus(csvStatus, err.message, "error"); }
   };
   reader.readAsText(file);
@@ -338,14 +350,14 @@ function stopPolling() {
 // ── Export CSV ────────────────────────────────────────────────────────────────
 
 exportBtn.addEventListener("click", async () => {
-  const { customDb = {}, homeAddress = "Home" } =
-    await browserAPI.storage.local.get(["customDb","homeAddress"]);
+  const { customDb = {}, homeAddress = "Home", transportProfile = "car" } =
+    await browserAPI.storage.local.get(["customDb","homeAddress","transportProfile"]);
   const entries = Object.entries(customDb);
   if (!entries.length) { appendLog(["No data to export."]); return; }
   const origin = homeAddress.split(/[,\n]/)[0].trim() || "Home";
-  const rows   = ["Origin,Destination,Travel_Time"];
+  const rows   = ["Origin,Destination,Travel_Time,Mode"];
   for (const [dest, time] of entries) {
-    rows.push(`${origin},${dest.replace(/-/g," ").replace(/\b\w/g, c=>c.toUpperCase())},${time}`);
+    rows.push(`${origin},${dest.replace(/-/g," ").replace(/\b\w/g, c=>c.toUpperCase())},${time},${transportProfile}`);
   }
   const blob = new Blob([rows.join("\n")], { type: "text/csv" });
   const url  = URL.createObjectURL(blob);
