@@ -3,7 +3,7 @@
   "name": "LinkedIn Commute Time",
   "version": "1.2.0",
   "description": "Shows commute time from your home to each job on LinkedIn's job search page.",
-  "permissions": ["storage", "tabs", "scripting"],
+  "permissions": ["storage"],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -12,8 +12,7 @@
   },
   "host_permissions": [
     "https://api.openrouteservice.org/*",
-    "https://maps.googleapis.com/*",
-    "https://9292.nl/*"
+    "https://maps.googleapis.com/*"
   ],
   "web_accessible_resources": [
     {
