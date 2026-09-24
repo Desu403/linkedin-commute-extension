@@ -35,12 +35,12 @@ def check_manifest():
     assert "https://api.openrouteservice.org/*" in m["host_permissions"], "Missing ORS permission"
     assert "https://maps.googleapis.com/*" in m["host_permissions"], "Missing Google permission"
     assert any("cities_by_country.json" in r for res in m.get("web_accessible_resources",[]) for r in res.get("resources",[])), "cities_by_country.json not web accessible"
-    assert m["version"] == "1.2.0", f"Version should be 1.2.0, got {m['version']}"
+    assert m["version"] == "1.2.1", f"Version should be 1.2.1, got {m['version']}"
     assert "icons" in m, "Missing icons in manifest"
     for sz in ["16", "32", "48", "128"]:
         assert sz in m["icons"], f"Missing icon size {sz}"
         assert os.path.exists(f"{BASE}/{m['icons'][sz]}"), f"Icon file missing: {m['icons'][sz]}"
-test("manifest.json valid (v1.2.0 & icons)", check_manifest)
+test("manifest.json valid (v1.2.1 & icons)", check_manifest)
 
 def check_cities():
     with open(f"{BASE}/cities_by_country.json") as f:
