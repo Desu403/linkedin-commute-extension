@@ -433,7 +433,7 @@ async function init() {
   await populateCountries();
   if (stored.selectedCountry) countrySelect.value = stored.selectedCountry;
 
-  // Resume polling if fetch is already running
+  // Resume polling if fetch is already running, or show completed log
   try {
     const prog = await browserAPI.runtime.sendMessage({ type: "GET_FETCH_PROGRESS" });
     if (prog?.running) {
@@ -443,6 +443,12 @@ async function init() {
       if (prog.log?.length) { appendLog(prog.log); lastLogLen = prog.log.length; }
       logSummary.textContent = `${prog.done} / ${prog.total} cities`;
       startPolling();
+    } else if (prog?.log?.length) {
+      logWrap.classList.add("visible");
+      appendLog(prog.log);
+      lastLogLen = prog.log.length;
+      if (prog.done) logSummary.textContent = `${prog.done} / ${prog.total} cities`;
+      if (prog.saved > 0) exportBtn.style.display = "";
     }
   } catch { /* service worker dormant */ }
 

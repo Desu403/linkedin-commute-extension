@@ -218,15 +218,44 @@ async function processVisibleJobs() {
   }
 }
 
+// ── Multilingual Status Detection ──────────────────────────────────
+const STATUS_KEYWORDS = {
+  Applied: [
+    "applied", "gesolliciteerd", "beworben", "candidature envoyée", "postulé", "solicitud enviada", "solicitado"
+  ],
+  Viewed: [
+    "viewed", "bekeken", "angesehen", "consulté", "visto"
+  ],
+  Saved: [
+    "saved", "opgeslagen", "gespeichert", "enregistré", "guardado"
+  ],
+};
+
+function detectJobStatus(text) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  for (const kw of STATUS_KEYWORDS.Applied) {
+    if (lower.includes(kw)) return "Applied";
+  }
+  for (const kw of STATUS_KEYWORDS.Viewed) {
+    if (lower.includes(kw)) return "Viewed";
+  }
+  for (const kw of STATUS_KEYWORDS.Saved) {
+    if (lower.includes(kw)) return "Saved";
+  }
+  return null;
+}
+
 function updateJobColors() {
   const cards = getJobCards();
   cards.forEach(({ container }) => {
     const text = container.innerText || "";
+    const status = detectJobStatus(text);
     
     let color = "5, 118, 66"; // Green for not applied/seen
-    if (text.includes("Applied")) {
+    if (status === "Applied") {
       color = "217, 48, 37"; // Red for applied
-    } else if (text.includes("Saved") || text.includes("Viewed")) {
+    } else if (status === "Saved" || status === "Viewed") {
       color = "251, 188, 4"; // Yellow for saved/viewed
     }
     container.style.setProperty("border-left", `4px solid rgba(${color}, 0.6)`, "important");
@@ -243,7 +272,7 @@ function extractCardInfo(container) {
   // Title is usually the first meaningful line
   let title = "";
   let company = "";
-  const SKIP_RE = /^(Promoted|Easy Apply|Applied|Saved|Viewed|Hide|Dismiss|More options)$/i;
+  const SKIP_RE = /^(Promoted|Easy Apply|Applied|Saved|Viewed|Hide|Dismiss|More options|Gepromoot|Eenvoudig solliciteren|Gesolliciteerd|Bekeken|Opgeslagen|Beworben|Angesehen|Gespeichert|Anzeige|Gesponsert|Einfach bewerben|Sponsorisé|Postulé|Candidature simplifiée|Candidature envoyée|Consulté|Enregistré|Promocionado|Solicitud sencilla|Solicitado|Visto|Guardado)$/i;
   for (const line of lines) {
     // Strip any injected badge text so it doesn't corrupt the key
     const clean = line.replace(/[🚆🚗🚴🚶🚌]\s*\d+[hm]\s*\d*[m]?/gu, "").replace(/Applied \d+ \w+/g, "").replace(/Viewed \d+ \w+/g, "").replace(/\s*[·]\s*/g, " ").trim();
@@ -260,10 +289,7 @@ function extractCardInfo(container) {
     }
   }
   
-  let status = null;
-  if (text.includes("Applied")) status = "Applied";
-  else if (text.includes("Viewed")) status = "Viewed";
-  else if (text.includes("Saved")) status = "Saved";
+  const status = detectJobStatus(text);
   
   // Build a stable key from title + company
   const jobKey = (title + "|||" + company).toLowerCase().replace(/\s+/g, " ");
@@ -294,13 +320,13 @@ async function trackAndDisplayDates() {
   // Also grab any <li> that contains status text
   document.querySelectorAll("li").forEach(li => {
     const t = li.innerText || "";
-    if (t.length > 20 && t.length < 2000 && (t.includes("Applied") || t.includes("Viewed") || t.includes("Saved"))) {
+    if (t.length > 20 && t.length < 2000 && detectJobStatus(t)) {
       containers.add(li);
     }
   });
 
-  // 1. Save any new statuses (await them so tracker is up-to-date when we read it)
-  const savePromises = [];
+  // 1. Batch save all new statuses in a single atomic request (no race conditions)
+  const jobsToTrack = [];
   for (const container of containers) {
     const { title, company, status, jobKey } = extractCardInfo(container);
     if (!title || !company || !status) continue;
@@ -308,18 +334,20 @@ async function trackAndDisplayDates() {
     // If we've already tracked THIS EXACT status on this DOM node, skip it
     if (container.dataset.trackedStatus === status) continue;
     
-    savePromises.push(
-      browserAPI.runtime.sendMessage({
-        type: "TRACK_JOB_STATUS",
-        jobKey, title, company, status
-      }).catch(() => {})
-    );
-    
+    jobsToTrack.push({ jobKey, title, company, status });
     container.dataset.trackedStatus = status;
   }
   
-  // Wait for all saves to complete
-  if (savePromises.length > 0) await Promise.all(savePromises);
+  if (jobsToTrack.length > 0) {
+    try {
+      await browserAPI.runtime.sendMessage({
+        type: "TRACK_JOBS_BATCH",
+        jobs: jobsToTrack
+      });
+    } catch (e) {
+      // background service worker unavailable
+    }
+  }
   
   // 2. Fetch the full tracker and inject date badges
   let tracker;
@@ -348,12 +376,12 @@ async function trackAndDisplayDates() {
     const oldBadge = container.querySelector(".tracker-date-badge");
     if (oldBadge) oldBadge.remove();
     
-    // Find the status text element ("Applied", "Viewed", "Saved") to inject next to
+    // Find the status text element to inject next to
     let statusEl = null;
     const candidates = container.querySelectorAll("p, span, div");
     for (const el of candidates) {
       const t = (el.innerText || "").trim();
-      if (/^(Applied|Viewed|Saved)$/i.test(t) && !el.querySelector("p, span, div")) {
+      if (detectJobStatus(t) && !el.querySelector("p, span, div")) {
         statusEl = el;
         break;
       }
@@ -390,22 +418,42 @@ const scheduleProcess = debounceWithMaxWait(async () => {
     if (e.message?.includes("Extension context invalidated")) return;
     console.warn("[Commute Extension]", e.message);
   }
-}, 500, 2000);
+}, 400, 1500);
 
-// LinkedIn's jobs page is a single-page app: pagination and clicking into a
-// job both happen via history.pushState, not a full navigation, so a plain
-// content script only ever sees the DOM once unless we watch for this too.
-for (const method of ["pushState", "replaceState"]) {
-  const original = history[method];
-  history[method] = function (...args) {
-    const result = original.apply(this, args);
-    window.dispatchEvent(new Event("linkedin-locationchange"));
-    return result;
-  };
+// Detect SPA URL changes
+let currentHref = location.href;
+function checkNavigation() {
+  if (location.href !== currentHref) {
+    currentHref = location.href;
+    scheduleProcess();
+  }
 }
-window.addEventListener("popstate", () => window.dispatchEvent(new Event("linkedin-locationchange")));
-window.addEventListener("linkedin-locationchange", scheduleProcess);
+window.addEventListener("popstate", checkNavigation);
 
-new MutationObserver(scheduleProcess).observe(document.body, { childList: true, subtree: true });
+function onDomMutation(mutations) {
+  checkNavigation();
+  let hasRelevant = false;
+  for (const m of mutations) {
+    if (m.type === "childList" && m.addedNodes.length > 0) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType === 1) {
+          const tag = node.tagName;
+          if (tag !== "SCRIPT" && tag !== "STYLE" && tag !== "LINK") {
+            hasRelevant = true;
+            break;
+          }
+        }
+      }
+    }
+    if (hasRelevant) break;
+  }
+  if (hasRelevant) scheduleProcess();
+}
+
+const targetNode = document.querySelector(".scaffold-layout__main") ||
+                   document.querySelector("main") ||
+                   document.body;
+
+new MutationObserver(onDomMutation).observe(targetNode, { childList: true, subtree: true });
 
 scheduleProcess();

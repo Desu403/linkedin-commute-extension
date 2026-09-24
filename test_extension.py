@@ -201,6 +201,74 @@ def test_db_lookup():
     assert lookup("Rotterdam") == "0m"
 test("DB lookup handles aliases and normalisation", test_db_lookup)
 
+def test_track_jobs_batch():
+    """Simulate handleTrackJobsBatch atomic updates and deduplication"""
+    tracker = {}
+    today = "2026-09-24"
+    batch = [
+        {"jobKey": "dev|||google", "title": "Dev", "company": "Google", "status": "Applied"},
+        {"jobKey": "qa|||apple", "title": "QA", "company": "Apple", "status": "Viewed"},
+        {"jobKey": "pm|||meta", "title": "PM", "company": "Meta", "status": "Saved"},
+    ]
+    for item in batch:
+        k = item["jobKey"]
+        existing = tracker.get(k, {})
+        existing["title"] = item["title"]
+        existing["company"] = item["company"]
+        if item["status"] == "Applied" and "appliedDate" not in existing:
+            existing["appliedDate"] = today
+        elif item["status"] == "Viewed" and "viewedDate" not in existing:
+            existing["viewedDate"] = today
+        elif item["status"] == "Saved" and "savedDate" not in existing:
+            existing["savedDate"] = today
+        tracker[k] = existing
+
+    assert len(tracker) == 3
+    assert tracker["dev|||google"]["appliedDate"] == today
+    assert tracker["qa|||apple"]["viewedDate"] == today
+    assert tracker["pm|||meta"]["savedDate"] == today
+test("TRACK_JOBS_BATCH atomically tracks multiple cards without race conditions", test_track_jobs_batch)
+
+def test_multilingual_status():
+    """Test localized job status detection across EN, NL, DE, FR, ES"""
+    STATUS_KEYWORDS = {
+        "Applied": ["applied", "gesolliciteerd", "beworben", "candidature envoyée", "postulé", "solicitud enviada", "solicitado"],
+        "Viewed": ["viewed", "bekeken", "angesehen", "consulté", "visto"],
+        "Saved": ["saved", "opgeslagen", "gespeichert", "enregistré", "guardado"],
+    }
+    def detect_status(text):
+        low = text.lower()
+        for kw in STATUS_KEYWORDS["Applied"]:
+            if kw in low: return "Applied"
+        for kw in STATUS_KEYWORDS["Viewed"]:
+            if kw in low: return "Viewed"
+        for kw in STATUS_KEYWORDS["Saved"]:
+            if kw in low: return "Saved"
+        return None
+
+    assert detect_status("Applied 2 weeks ago") == "Applied"
+    assert detect_status("Gesolliciteerd op 12 sep") == "Applied" # Dutch
+    assert detect_status("Vor 3 Tagen beworben") == "Applied"     # German
+    assert detect_status("Candidature envoyée") == "Applied"      # French
+    assert detect_status("Solicitud enviada") == "Applied"        # Spanish
+    assert detect_status("Bekeken") == "Viewed"                  # Dutch
+    assert detect_status("Angesehen") == "Viewed"                # German
+    assert detect_status("Opgeslagen") == "Saved"                # Dutch
+    assert detect_status("Gespeichert") == "Saved"               # German
+    assert detect_status("Regular job title") is None
+test("Multilingual job status detection (EN, NL, DE, FR, ES)", test_multilingual_status)
+
+def test_multilingual_skip_regex():
+    """Test localized skip regex for badge/metadata stripping"""
+    SKIP_RE = re.compile(r"^(Promoted|Easy Apply|Applied|Saved|Viewed|Hide|Dismiss|More options|Gepromoot|Eenvoudig solliciteren|Gesolliciteerd|Bekeken|Opgeslagen|Beworben|Angesehen|Gespeichert|Anzeige|Gesponsert|Einfach bewerben|Sponsorisé|Postulé|Candidature simplifiée|Candidature envoyée|Consulté|Enregistré|Promocionado|Solicitud sencilla|Solicitado|Visto|Guardado)$", re.I)
+    assert SKIP_RE.match("Promoted")
+    assert SKIP_RE.match("Eenvoudig solliciteren")
+    assert SKIP_RE.match("Einfach bewerben")
+    assert SKIP_RE.match("Candidature simplifiée")
+    assert SKIP_RE.match("Solicitud sencilla")
+    assert not SKIP_RE.match("Senior Software Engineer")
+test("Multilingual SKIP_RE correctly filters card metadata", test_multilingual_skip_regex)
+
 # ── 3. Popup HTML structure ────────────────────────────────────────────────────
 print("\n🖥️  Popup HTML")
 

@@ -64,22 +64,36 @@ async function handleGetCommuteTimes({ locations }) {
 
 // ─── Application Tracker ─────────────────────────────────────────────────────
 
-async function handleTrackJobStatus({ jobKey, title, company, location, status }) {
-  if (!jobKey) return;
+// ─── Application Tracker ─────────────────────────────────────────────────────
+
+async function handleTrackJobsBatch({ jobs }) {
+  if (!jobs?.length) return {};
   const { jobTracker = {} } = await browserAPI.storage.local.get("jobTracker");
-  const existing = jobTracker[jobKey] || { title, company, location };
-
-  existing.title    = title    || existing.title;
-  existing.company  = company  || existing.company;
-  existing.location = location || existing.location;
-
   const today = new Date().toISOString().slice(0, 10);
+  let changed = false;
 
-  if (status === "Applied" && !existing.appliedDate) existing.appliedDate = today;
-  else if (status === "Viewed" && !existing.viewedDate) existing.viewedDate = today;
-  else if (status === "Saved"  && !existing.savedDate)  existing.savedDate  = today;
+  for (const item of jobs) {
+    const { jobKey, title, company, location, status } = item;
+    if (!jobKey) continue;
+    const existing = jobTracker[jobKey] || { title, company, location };
 
-  jobTracker[jobKey] = existing;
+    existing.title    = title    || existing.title;
+    existing.company  = company  || existing.company;
+    existing.location = location || existing.location;
+
+    if (status === "Applied" && !existing.appliedDate) {
+      existing.appliedDate = today;
+      changed = true;
+    } else if (status === "Viewed" && !existing.viewedDate) {
+      existing.viewedDate = today;
+      changed = true;
+    } else if (status === "Saved" && !existing.savedDate) {
+      existing.savedDate = today;
+      changed = true;
+    }
+
+    jobTracker[jobKey] = existing;
+  }
 
   const keys = Object.keys(jobTracker);
   if (keys.length > 2000) {
@@ -89,10 +103,17 @@ async function handleTrackJobStatus({ jobKey, title, company, location, status }
       return dA.localeCompare(dB);
     });
     for (let i = 0; i < sorted.length - 1500; i++) delete jobTracker[sorted[i]];
+    changed = true;
   }
 
   await browserAPI.storage.local.set({ jobTracker });
-  return existing;
+  return jobTracker;
+}
+
+async function handleTrackJobStatus({ jobKey, title, company, location, status }) {
+  if (!jobKey) return null;
+  const tracker = await handleTrackJobsBatch({ jobs: [{ jobKey, title, company, location, status }] });
+  return tracker[jobKey] || null;
 }
 
 async function handleGetJobTracker() {
@@ -122,7 +143,9 @@ const PROFILE_MAP = {
   },
 };
 
-// Fetch state (persists while service worker is alive)
+// Fetch state (persists in session storage across service worker dormant cycles)
+const sessionStore = browserAPI.storage?.session || browserAPI.storage?.local;
+
 let fetchState = {
   running: false,
   done:    0,
@@ -132,10 +155,32 @@ let fetchState = {
   log:     [],
 };
 
+async function saveFetchState() {
+  try {
+    if (sessionStore) {
+      await sessionStore.set({ fetchState });
+    }
+  } catch (e) {}
+}
+
+async function loadFetchState() {
+  try {
+    if (sessionStore) {
+      const data = await sessionStore.get("fetchState");
+      if (data?.fetchState) {
+        fetchState = { ...fetchState, ...data.fetchState };
+      }
+    }
+  } catch (e) {}
+}
+
+loadFetchState();
+
 function addLog(msg) {
   const t = new Date().toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   fetchState.log.push(`[${t}] ${msg}`);
   if (fetchState.log.length > 300) fetchState.log = fetchState.log.slice(-300);
+  saveFetchState();
 }
 
 function fmtDuration(seconds) {
@@ -268,6 +313,7 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
         addLog(`${city.name}: ${time}`);
         if (fetchState.saved % 10 === 0) {
           await browserAPI.storage.local.set({ customDb: db, transportProfile: profile });
+          await saveFetchState();
         }
       } else {
         addLog(`${city.name}: no route found`);
@@ -282,6 +328,7 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
   fetchState.done    = cities.length;
   fetchState.running = false;
   addLog(`Finished: ${fetchState.saved} / ${cities.length} cities saved.`);
+  await saveFetchState();
 }
 
 
@@ -293,6 +340,13 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleGetCommuteTimes(message)
       .then(sendResponse)
       .catch((err) => { console.error("[commute-ext] lookup failed:", err.message); sendResponse({}); });
+    return true;
+  }
+
+  if (message?.type === "TRACK_JOBS_BATCH") {
+    handleTrackJobsBatch(message)
+      .then(sendResponse)
+      .catch(() => sendResponse({}));
     return true;
   }
 
@@ -315,6 +369,7 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     runFetch(message).catch(err => {
       fetchState.running = false;
       fetchState.error   = err.message;
+      saveFetchState();
     });
     sendResponse({ ok: true });
     return true;
@@ -322,6 +377,7 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "STOP_API_FETCH") {
     fetchState.running = false;
+    saveFetchState();
     sendResponse({ ok: true });
     return true;
   }
