@@ -41,6 +41,8 @@ Works on job search results and on the Jobs home page (including "More jobs for 
 - Follow-up reminder: applications turn orange after 14 days and are listed in the popup
 - Commute badges are colored by duration (up to 45 min / up to 90 min / longer)
 - Popup settings: fade or hide applied jobs, fade jobs over a maximum commute, turn the New tag on/off
+- Company notes and blocklist: right-click any job card → **Hide this company** or **Note on this company…**. Notes show on every card from that company; manage both in the popup
+- Title filter: fade jobs whose title contains words you choose (e.g. `senior, lead, german`)
 - Export your history to CSV (dates, every view date, link to the job)
 
 If LinkedIn changes its layout and the extension can't find job cards on a page that clearly lists jobs, the toolbar icon shows a red **!**. See `tests/README.md` for how to check and fix it.

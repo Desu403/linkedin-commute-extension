@@ -100,15 +100,40 @@ function refreshAllBadges() {
 }
 
 // Display preferences, set on the popup's Jobs tab
-const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0 };
+const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, titleFilter: "" };
 let prefs = { ...DEFAULT_PREFS };
+let companyRules = {}; // companyKey -> { name, hidden, note }
 async function loadPrefs() {
   try {
-    const { displayPrefs = {} } = await browserAPI.storage.local.get("displayPrefs");
+    const { displayPrefs = {}, companyRules: rules = {} } = await browserAPI.storage.local.get(["displayPrefs", "companyRules"]);
     prefs = { ...DEFAULT_PREFS, ...displayPrefs };
+    companyRules = rules;
   } catch { /* keep defaults */ }
 }
 const prefsReady = loadPrefs();
+
+// "Acknowledge Benelux B.V." and "Acknowledge Benelux BV" are the same company
+function companyKey(name) {
+  return (name || "").toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+(bv|nv|inc|ltd|llc|gmbh|ag|sa|srl|plc|co)$/, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+async function updateCompanyRule(name, patch) {
+  const { companyRules: rules = {} } = await browserAPI.storage.local.get("companyRules");
+  const key = companyKey(name);
+  const rule = { ...(rules[key] || {}), name, ...patch };
+  if (!rule.hidden && !rule.note) delete rules[key];
+  else rules[key] = rule;
+  await browserAPI.storage.local.set({ companyRules: rules });
+}
+
+// Title filter "senior, lead, german" -> regexes matching whole words
+function titleFilterRegexes() {
+  return (prefs.titleFilter || "").split(",").map(t => t.trim()).filter(Boolean)
+    .map(t => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
+}
 
 if (browserAPI.storage?.onChanged) {
   browserAPI.storage.onChanged.addListener((changes, area) => {
@@ -118,8 +143,9 @@ if (browserAPI.storage?.onChanged) {
         refreshAllBadges();
       });
     }
-    if (changes.displayPrefs) {
-      prefs = { ...DEFAULT_PREFS, ...(changes.displayPrefs.newValue || {}) };
+    if (changes.displayPrefs || changes.companyRules) {
+      if (changes.displayPrefs) prefs = { ...DEFAULT_PREFS, ...(changes.displayPrefs.newValue || {}) };
+      if (changes.companyRules) companyRules = changes.companyRules.newValue || {};
       scheduleProcess(); // defined below; storage events only arrive after this script ran
     }
   });
@@ -150,7 +176,7 @@ function injectBadge(afterEl, timeText) {
 //   - older layouts: [data-job-id] / [data-occludable-job-id]
 
 const JOB_REF = "job-card-component-ref-";
-const OUR_BADGES = ".commute-badge, .tracker-date-badge, .tracker-age-badge";
+const OUR_BADGES = ".commute-badge, .tracker-date-badge, .tracker-age-badge, .tracker-note-badge";
 const DETAIL_PANE_SEL = ".jobs-search__job-details--container, .scaffold-layout__detail, .jobs-details__main-content, .job-view-layout";
 const MAX_CARD_TEXT = 1500;
 
@@ -513,6 +539,7 @@ async function processPage() {
   const hasHistory = Object.values(tracker).some(e => e.firstSeen && e.firstSeen < today);
 
   await addCommuteBadges(cards);
+  const filters = titleFilterRegexes();
 
   for (const card of cards) {
     const entry = tracker["id:" + card.jobId];
@@ -528,9 +555,16 @@ async function processPage() {
     const mins = commuteEl ? commuteMinutes(commuteEl.textContent) : null;
     const tooFar = prefs.maxCommute > 0 && mins != null && mins > prefs.maxCommute;
 
+    const rule = companyRules[companyKey(card.info.company)];
+    const titleFiltered = filters.some(re => re.test(card.info.title));
+
     paint(card, applied ? "applied" : seen ? "seen" : isNew ? "new" : "fresh",
-          (applied && prefs.fadeApplied) || tooFar,
-          applied && prefs.hideApplied);
+          (applied && prefs.fadeApplied) || tooFar || titleFiltered,
+          (applied && prefs.hideApplied) || !!rule?.hidden);
+
+    placeBadge(card, "tracker-note-badge",
+               rule?.note ? { text: "📝 " + (rule.note.length > 30 ? rule.note.slice(0, 29) + "…" : rule.note), kind: "note", tooltip: `${rule.name}: ${rule.note}` } : { text: null },
+               card.info.companyEl);
 
     const dateNode = placeBadge(card, "tracker-date-badge", describe(entry, repost, isNew, today),
                                 card.info.statusEl || card.info.companyEl);
@@ -538,6 +572,27 @@ async function processPage() {
                dateNode || card.info.statusEl || card.info.companyEl);
   }
 }
+
+// Right-click menu (see background.js): remember which card was right-clicked,
+// then act on its company when the menu item arrives.
+let contextCompany = null;
+document.addEventListener("contextmenu", (e) => {
+  const card = getJobCards().find(c => c.el.contains(e.target));
+  contextCompany = card ? readCard(card.el).company || null : null;
+}, true);
+
+browserAPI.runtime.onMessage.addListener((msg) => {
+  if (msg?.type !== "CONTEXT_ACTION") return;
+  const company = contextCompany;
+  if (!company) { alert("Right-click on a job card to use this."); return; }
+  if (msg.action === "lc-hide-company") {
+    updateCompanyRule(company, { hidden: true });
+  } else if (msg.action === "lc-note-company") {
+    const current = companyRules[companyKey(company)]?.note || "";
+    const note = prompt(`Note on ${company} (shown on all its job cards; leave empty to remove):`, current);
+    if (note !== null) updateCompanyRule(company, { note: note.trim() });
+  }
+});
 
 const scheduleProcess = debounceWithMaxWait(async () => {
   try {

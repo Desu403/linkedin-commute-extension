@@ -281,6 +281,19 @@
   .job-item .ji-age { font-size: 10px; color: var(--yellow); white-space: nowrap; }
   .empty-note { font-size: 11px; color: var(--text-muted); }
 
+  .company-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; background: var(--surface); }
+  .company-row .cr-main { flex: 1; min-width: 0; }
+  .company-row .cr-name { font-size: 12px; font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .company-row .cr-note { font-size: 10px; color: #d2a8ff; cursor: pointer; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .company-row .cr-note.empty { color: var(--text-muted); }
+  .chip-btn {
+    font-family: inherit; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 8px;
+    border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer;
+  }
+  .chip-btn.on { color: var(--red); border-color: rgba(248,81,73,.35); background: var(--red-dim); }
+  .icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+  .icon-btn:hover { color: var(--red); }
+
   .link-danger {
     background: none; border: none; font-family: inherit; font-size: 10px;
     color: var(--text-muted); cursor: pointer; text-decoration: underline;
@@ -317,6 +330,23 @@
       <span>Fade jobs with a commute over</span>
       <input type="text" id="prefMaxCommute" inputmode="numeric" placeholder="off" class="num-input" />
       <span>min</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Filters</div>
+    <div class="field">
+      <div class="field-label">Fade jobs whose title contains <span class="saved-hint" id="titleFilterSaved">✓ saved</span></div>
+      <input type="text" id="prefTitleFilter" placeholder="e.g. senior, lead, german" />
+    </div>
+    <div class="field">
+      <div class="field-label">Companies</div>
+      <div id="companyList" class="job-list"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <input type="text" id="companyInput" placeholder="Company name" style="flex:1;" />
+        <button class="btn btn-ghost" id="hideCompanyBtn">Hide</button>
+      </div>
+      <p class="empty-note" style="margin-top:6px;">Or right-click a job card on LinkedIn → <em>Hide this company</em> / <em>Note on this company…</em></p>
     </div>
   </div>
 

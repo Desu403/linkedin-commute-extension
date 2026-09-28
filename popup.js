@@ -41,7 +41,7 @@ $("tabSetup").addEventListener("click", () => setMainTab("setup"));
 
 // ─── Display preferences (read live by the content script) ────────────────────
 
-const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0 };
+const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, titleFilter: "" };
 
 async function loadPrefs() {
   const { displayPrefs = {} } = await browserAPI.storage.local.get("displayPrefs");
@@ -50,6 +50,7 @@ async function loadPrefs() {
   $("prefHideApplied").checked = p.hideApplied;
   $("prefMarkNew").checked     = p.markNew;
   $("prefMaxCommute").value    = p.maxCommute || "";
+  $("prefTitleFilter").value   = p.titleFilter || "";
 }
 
 async function savePrefs() {
@@ -59,10 +60,73 @@ async function savePrefs() {
     hideApplied: $("prefHideApplied").checked,
     markNew:     $("prefMarkNew").checked,
     maxCommute:  max > 0 ? max : 0,
+    titleFilter: $("prefTitleFilter").value.trim(),
   }});
 }
 for (const id of ["prefFadeApplied", "prefHideApplied", "prefMarkNew"]) $(id).addEventListener("change", savePrefs);
 $("prefMaxCommute").addEventListener("change", savePrefs);
+$("prefTitleFilter").addEventListener("change", async () => { await savePrefs(); flashSaved($("titleFilterSaved")); });
+
+// ─── Company rules (hide / note), shared with the content script ──────────────
+
+// Must match companyKey() in content_script.js
+function companyKey(name) {
+  return (name || "").toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+(bv|nv|inc|ltd|llc|gmbh|ag|sa|srl|plc|co)$/, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+async function updateCompany(name, patch) {
+  const { companyRules = {} } = await browserAPI.storage.local.get("companyRules");
+  const key = companyKey(name);
+  const rule = { ...(companyRules[key] || {}), name, ...patch };
+  if (!rule.hidden && !rule.note) delete companyRules[key];
+  else companyRules[key] = rule;
+  await browserAPI.storage.local.set({ companyRules });
+  renderCompanies();
+}
+
+async function renderCompanies() {
+  const { companyRules = {} } = await browserAPI.storage.local.get("companyRules");
+  const list = $("companyList");
+  list.replaceChildren();
+  const rules = Object.values(companyRules).sort((a, b) => a.name.localeCompare(b.name));
+  for (const r of rules) {
+    const row = document.createElement("div");
+    row.className = "company-row";
+    const main = document.createElement("span");
+    main.className = "cr-main";
+    const name = document.createElement("span"); name.className = "cr-name"; name.textContent = r.name;
+    const note = document.createElement("span");
+    note.className = "cr-note" + (r.note ? "" : " empty");
+    note.textContent = r.note ? "📝 " + r.note : "+ add note";
+    note.title = "Click to edit the note";
+    note.addEventListener("click", () => {
+      const v = prompt(`Note on ${r.name}:`, r.note || "");
+      if (v !== null) updateCompany(r.name, { note: v.trim() });
+    });
+    main.append(name, note);
+    const hide = document.createElement("button");
+    hide.className = "chip-btn" + (r.hidden ? " on" : "");
+    hide.textContent = r.hidden ? "Hidden" : "Shown";
+    hide.title = r.hidden ? "Click to show this company's jobs again" : "Click to hide this company's jobs";
+    hide.addEventListener("click", () => updateCompany(r.name, { hidden: !r.hidden }));
+    const del = document.createElement("button");
+    del.className = "icon-btn"; del.textContent = "×"; del.title = "Remove";
+    del.addEventListener("click", () => updateCompany(r.name, { hidden: false, note: "" }));
+    row.append(main, hide, del);
+    list.append(row);
+  }
+}
+
+$("hideCompanyBtn").addEventListener("click", async () => {
+  const name = $("companyInput").value.trim();
+  if (!name) return;
+  await updateCompany(name, { hidden: true });
+  $("companyInput").value = "";
+});
+$("companyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("hideCompanyBtn").click(); });
 
 // ─── CSV Panel ────────────────────────────────────────────────────────────────
 
@@ -548,6 +612,7 @@ async function initJobsTab() {
   const { popupTab } = await browserAPI.storage.local.get("popupTab");
   setMainTab(popupTab || "jobs");
   await loadPrefs();
+  await renderCompanies();
   await updateTrackerStatus();
 }
 

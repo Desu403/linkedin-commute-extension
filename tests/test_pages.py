@@ -25,6 +25,7 @@ STUB = """
   const store = %s;
   const listeners = [];
   window.__store = store;
+  window.__listeners = listeners;
   window.browser = {
     storage: { local: {
       get: async (keys) => { const o = {}; for (const k of [].concat(keys)) if (k in store) o[k] = JSON.parse(JSON.stringify(store[k])); return o; },
@@ -60,7 +61,7 @@ REPORT = """
       id: c.jobId, title: c.info.title, company: c.info.company,
       loc: c.info.locationEl ? ownText(c.info.locationEl) : null,
       status: c.info.status, state: c.el.dataset.lcState || null,
-      badges: [...c.el.querySelectorAll('.tracker-date-badge, .tracker-age-badge')].map(b => b.textContent),
+      badges: [...c.el.querySelectorAll('.tracker-date-badge, .tracker-age-badge, .tracker-note-badge')].map(b => b.textContent),
     })),
   };
 }
@@ -72,7 +73,7 @@ def prepare(src: pathlib.Path, out_dir: pathlib.Path, break_keys=False) -> pathl
     html = src.read_text(encoding="utf-8", errors="ignore")
     html = re.sub(r"<meta[^>]+Content-Security-Policy[^>]*>", "", html, flags=re.I)
     html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.S | re.I)
-    html = re.sub(r'<span class="(commute-badge|tracker-date-badge|tracker-age-badge)[^"]*"[^>]*>.*?</span>', "", html, flags=re.S)
+    html = re.sub(r'<span class="(commute-badge|tracker-date-badge|tracker-age-badge|tracker-note-badge)[^"]*"[^>]*>.*?</span>', "", html, flags=re.S)
     html = re.sub(r'\s(data-commute-badge|data-tracked-status|data-badge-text|data-lc-[a-z-]+)="[^"]*"', "", html)
     html = re.sub(r'(style="[^"]*?)border-left:[^;"]*;?', r"\1", html)
     if break_keys:  # simulate LinkedIn renaming its card keys
@@ -83,12 +84,18 @@ def prepare(src: pathlib.Path, out_dir: pathlib.Path, break_keys=False) -> pathl
     return out
 
 
+def company_key(name):  # mirrors companyKey() in content_script.js
+    k = re.sub(r"[.,]", "", (name or "").lower())
+    k = re.sub(r"\s+(bv|nv|inc|ltd|llc|gmbh|ag|sa|srl|plc|co)$", "", k)
+    return re.sub(r"\s+", " ", k).strip()
+
+
 def saved_url(src: pathlib.Path) -> str:
     m = re.search(r"saved from url=\(\d+\)(\S+)", src.read_text(encoding="utf-8", errors="ignore")[:3000])
     return m.group(1) if m else ""
 
 
-def run_page(browser, path, url, seed):
+def run_page(browser, path, url, seed, right_click_hide=None):
     open_id = (re.search(r"currentJobId=(\d+)", url) or [None, None])[1]
     pg = browser.new_page(viewport={"width": 1400, "height": 2400}, bypass_csp=True)
     pg.route(re.compile(r"^https?://"), lambda r: r.abort())
@@ -106,6 +113,17 @@ def run_page(browser, path, url, seed):
       .observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true }); }""")
     pg.evaluate("processPage()"); pg.wait_for_timeout(400)
     pg.evaluate("processPage()"); pg.wait_for_timeout(400)
+    if right_click_hide is not None:
+        # Right-click card N, then the "Hide this company" menu item arrives from background.js
+        pg.evaluate("""(n) => {
+          const card = getJobCards()[n];
+          card.el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+          for (const fn of window.__listeners) fn({ type: 'CONTEXT_ACTION', action: 'lc-hide-company' }, {}, () => {});
+        }""", right_click_hide)
+        pg.wait_for_timeout(300)
+        rep = {"companyRules": pg.evaluate("window.__store.companyRules || {}")}
+        pg.close()
+        return rep
     rep = pg.evaluate(REPORT)
     rep["domChangesOnRerun"] = pg.evaluate("window.__muts")
     rep["looksLikeJobList"] = pg.evaluate("looksLikeJobList()")
@@ -153,6 +171,23 @@ def main():
             if SHOW:
                 for c in cards:
                     print(f"    {c['id']} {(c['status'] or ''):7} {c['title'][:40]:40} | {c['company'][:22]:22} | {(c['loc'] or '-')[:30]:30} | {' + '.join(c['badges'])}")
+
+            # Company hide / note and title filter, using this page's own cards
+            if is_job_list and len(cards) >= 3:
+                c0, c1, c2 = cards[0], cards[1], cards[2]
+                word = max(re.findall(r"[A-Za-z]{4,}", c2["title"]) or ["zzzz"], key=len)
+                seed = {"companyRules": {company_key(c0["company"]): {"name": c0["company"], "hidden": True},
+                                         company_key(c1["company"]): {"name": c1["company"], "note": "test note"}},
+                        "displayPrefs": {"titleFilter": word}}
+                f = {c["id"]: c for c in run_page(browser, prepare(src, pathlib.Path(tmp)), url, seed)["cards"]}
+                same_co0 = [c for c in f.values() if company_key(c["company"]) == company_key(c0["company"])]
+                check(all(c["state"].endswith("|true") for c in same_co0), f"{name}: hidden company '{c0['company']}' still shown")
+                check(any(b.startswith("📝 test note") for b in f[c1["id"]]["badges"]), f"{name}: company note missing on '{c1['company']}'")
+                check(f[c2["id"]]["state"].split("|")[1] == "true" or f[c2["id"]]["state"].endswith("|true"),
+                      f"{name}: title filter '{word}' didn't fade '{c2['title']}'")
+                rc = run_page(browser, prepare(src, pathlib.Path(tmp)), url, {}, right_click_hide=0)
+                check(rc["companyRules"].get(company_key(c0["company"]), {}).get("hidden") is True,
+                      f"{name}: right-click 'Hide this company' didn't save a rule (got {rc['companyRules']})")
 
             # The breakage alarm must fire when LinkedIn renames its card keys
             if "/jobs/search" in url:

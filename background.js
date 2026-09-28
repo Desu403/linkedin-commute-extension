@@ -455,3 +455,21 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 });
+
+// ─── Right-click on a job card: hide / annotate its company ──────────────────
+
+const JOB_PAGES = ["https://www.linkedin.com/jobs/*", "https://www.linkedin.com/company/*/jobs*"];
+
+browserAPI.runtime.onInstalled.addListener(() => {
+  browserAPI.contextMenus.removeAll(() => {
+    browserAPI.contextMenus.create({ id: "lc-hide-company", title: "Hide this company", contexts: ["all"], documentUrlPatterns: JOB_PAGES });
+    browserAPI.contextMenus.create({ id: "lc-note-company", title: "Note on this company…", contexts: ["all"], documentUrlPatterns: JOB_PAGES });
+  });
+});
+
+browserAPI.contextMenus?.onClicked.addListener((info, tab) => {
+  if (tab?.id == null || !String(info.menuItemId).startsWith("lc-")) return;
+  // The content script remembers which card was right-clicked
+  browserAPI.tabs.sendMessage(tab.id, { type: "CONTEXT_ACTION", action: info.menuItemId }, { frameId: info.frameId || 0 })
+    .catch(() => {});
+});
