@@ -26,6 +26,44 @@ async function setMode(mode) {
 tabCsv.addEventListener("click", () => setMode("csv"));
 tabApi.addEventListener("click", () => setMode("api"));
 
+// ─── Main Tabs (Jobs / Commute setup) ─────────────────────────────────────────
+
+function setMainTab(tab) {
+  const jobs = tab !== "setup";
+  $("tabJobs").classList.toggle("active", jobs);
+  $("tabSetup").classList.toggle("active", !jobs);
+  $("panelJobs").classList.toggle("active", jobs);
+  $("panelSetup").classList.toggle("active", !jobs);
+  browserAPI.storage.local.set({ popupTab: jobs ? "jobs" : "setup" });
+}
+$("tabJobs").addEventListener("click", () => setMainTab("jobs"));
+$("tabSetup").addEventListener("click", () => setMainTab("setup"));
+
+// ─── Display preferences (read live by the content script) ────────────────────
+
+const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0 };
+
+async function loadPrefs() {
+  const { displayPrefs = {} } = await browserAPI.storage.local.get("displayPrefs");
+  const p = { ...DEFAULT_PREFS, ...displayPrefs };
+  $("prefFadeApplied").checked = p.fadeApplied;
+  $("prefHideApplied").checked = p.hideApplied;
+  $("prefMarkNew").checked     = p.markNew;
+  $("prefMaxCommute").value    = p.maxCommute || "";
+}
+
+async function savePrefs() {
+  const max = parseInt($("prefMaxCommute").value, 10);
+  await browserAPI.storage.local.set({ displayPrefs: {
+    fadeApplied: $("prefFadeApplied").checked,
+    hideApplied: $("prefHideApplied").checked,
+    markNew:     $("prefMarkNew").checked,
+    maxCommute:  max > 0 ? max : 0,
+  }});
+}
+for (const id of ["prefFadeApplied", "prefHideApplied", "prefMarkNew"]) $(id).addEventListener("change", savePrefs);
+$("prefMaxCommute").addEventListener("change", savePrefs);
+
 // ─── CSV Panel ────────────────────────────────────────────────────────────────
 
 const homeCityEl     = $("homeCity");
@@ -377,21 +415,70 @@ clearApiBtn.addEventListener("click", async () => {
 
 // ─── Application Tracker ─────────────────────────────────────────────────────
 
+const FOLLOW_UP_DAYS = 14;
+
+function daysSince(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  const then = new Date(y, m - 1, d), now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((now - then) / 86400000);
+}
+
+// Jobs the tracker only ever saw scroll past aren't "tracked" in any useful sense.
+const hasActivity = e => e.appliedDate || e.viewedDate || e.savedDate;
+
 async function updateTrackerStatus() {
   const { jobTracker = {} } = await browserAPI.storage.local.get("jobTracker");
   const entries = Object.values(jobTracker);
-  $("statTotal").textContent   = entries.length;
-  $("statApplied").textContent = entries.filter(e => e.appliedDate).length;
+  const applied = entries.filter(e => e.appliedDate);
+  $("statApplied").textContent = applied.length;
+  $("statWeek").textContent    = applied.filter(e => daysSince(e.appliedDate) < 7).length;
   $("statViewed").textContent  = entries.filter(e => e.viewedDate && !e.appliedDate).length;
+
+  const due = applied
+    .map(e => ({ ...e, age: daysSince(e.appliedDate) }))
+    .filter(e => e.age >= FOLLOW_UP_DAYS)
+    .sort((a, b) => a.age - b.age);
+  $("followupCount").textContent = due.length ? `· ${due.length}` : "";
+  const list = $("followupList");
+  list.replaceChildren();
+  if (!due.length) {
+    const p = document.createElement("p");
+    p.className = "empty-note";
+    p.textContent = `Applications from ${FOLLOW_UP_DAYS}+ days ago show up here.`;
+    list.append(p);
+    return;
+  }
+  for (const e of due.slice(0, 6)) {
+    const a = document.createElement(e.jobId ? "a" : "div");
+    a.className = "job-item";
+    if (e.jobId) { a.href = `https://www.linkedin.com/jobs/view/${e.jobId}/`; a.target = "_blank"; }
+    const main = document.createElement("span");
+    main.className = "ji-main";
+    const t = document.createElement("span"); t.className = "ji-title"; t.textContent = e.title || "(untitled)";
+    const s = document.createElement("span"); s.className = "ji-sub";   s.textContent = e.company || "";
+    main.append(t, s);
+    const age = document.createElement("span"); age.className = "ji-age"; age.textContent = `${e.age}d ago`;
+    a.append(main, age);
+    list.append(a);
+  }
+  if (due.length > 6) {
+    const more = document.createElement("p");
+    more.className = "empty-note";
+    more.textContent = `+${due.length - 6} more in the CSV export`;
+    list.append(more);
+  }
 }
 
 $("exportTracker").addEventListener("click", async () => {
   const { jobTracker = {} } = await browserAPI.storage.local.get("jobTracker");
-  const entries = Object.values(jobTracker);
+  const entries = Object.values(jobTracker).filter(hasActivity);
   if (!entries.length) return;
   const esc  = s => `"${(s||"").replace(/"/g,'""')}"`;
-  const rows = ["Title,Company,Applied Date,Viewed Date,Saved Date",
-    ...entries.map(e => [esc(e.title),esc(e.company),e.appliedDate||"",e.viewedDate||"",e.savedDate||""].join(","))];
+  const link = e => e.jobId ? `https://www.linkedin.com/jobs/view/${e.jobId}/` : "";
+  const rows = ["Title,Company,Applied Date,Viewed Date,Saved Date,All View Dates,Link",
+    ...entries.map(e => [esc(e.title),esc(e.company),e.appliedDate||"",e.viewedDate||"",e.savedDate||"",
+      esc((e.views||[]).join(" ")),link(e)].join(","))];
   const blob = new Blob([rows.join("\n")], { type: "text/csv" });
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement("a"), { href: url, download: "linkedin_applications.csv" });
@@ -455,4 +542,14 @@ async function init() {
   updateTrackerStatus();
 }
 
+// The Jobs tab doesn't depend on the commute setup loading, so it starts on its
+// own: a failure in init() can't leave the toggles unloaded (and then saved blank).
+async function initJobsTab() {
+  const { popupTab } = await browserAPI.storage.local.get("popupTab");
+  setMainTab(popupTab || "jobs");
+  await loadPrefs();
+  await updateTrackerStatus();
+}
+
+initJobsTab();
 init();

@@ -66,54 +66,106 @@ async function handleGetCommuteTimes({ locations }) {
 
 // ─── Application Tracker ─────────────────────────────────────────────────────
 
-async function handleTrackJobsBatch({ jobs }) {
-  if (!jobs?.length) return {};
+// Entries are keyed "id:<LinkedIn job id>". Entries from before v1.3.0 are keyed
+// "title|||company" and get folded into the id entry the first time that job is seen.
+// Fields: appliedDate / viewedDate (first view) / savedDate, plus views[] = every
+// day the job was opened.
+
+const MAX_VIEW_DATES = 30;
+
+function localDate() {
+  return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD in local time, not UTC
+}
+
+function legacyKey(title, company) {
+  return ((title || "") + "|||" + (company || "")).toLowerCase().replace(/\s+/g, " ");
+}
+
+function addView(entry, day) {
+  entry.views = entry.views || (entry.viewedDate ? [entry.viewedDate] : []);
+  if (!entry.views.includes(day)) {
+    entry.views.push(day);
+    entry.views.sort();
+    if (entry.views.length > MAX_VIEW_DATES) entry.views.splice(0, entry.views.length - MAX_VIEW_DATES);
+  }
+  entry.viewedDate = entry.viewedDate || entry.views[0];
+}
+
+// Tabs send batches concurrently; serialize read-modify-write so one can't clobber another.
+let trackerQueue = Promise.resolve();
+function serialized(fn) {
+  const run = trackerQueue.then(fn);
+  trackerQueue = run.catch(() => {});
+  return run;
+}
+
+function handleTrackJobsBatch(msg) {
+  return serialized(() => trackJobsBatch(msg));
+}
+
+async function trackJobsBatch({ jobs }) {
   const { jobTracker = {} } = await browserAPI.storage.local.get("jobTracker");
-  const today = new Date().toISOString().slice(0, 10);
+  if (!jobs?.length) return jobTracker;
+  const today = localDate();
   let changed = false;
 
   for (const item of jobs) {
-    const { jobKey, title, company, location, status } = item;
-    if (!jobKey) continue;
-    const existing = jobTracker[jobKey] || { title, company, location };
+    const { jobId, title, company, location, status, viewedNow, seen } = item;
+    if (!jobId) continue;
+    const key = "id:" + jobId;
+    let existing = jobTracker[key];
 
-    existing.title    = title    || existing.title;
-    existing.company  = company  || existing.company;
-    existing.location = location || existing.location;
-
-    if (status === "Applied" && !existing.appliedDate) {
-      existing.appliedDate = today;
-      changed = true;
-    } else if (status === "Viewed" && !existing.viewedDate) {
-      existing.viewedDate = today;
-      changed = true;
-    } else if (status === "Saved" && !existing.savedDate) {
-      existing.savedDate = today;
+    if (!existing) {
+      existing = { jobId, title, company, location };
+      const old = title && company && jobTracker[legacyKey(title, company)];
+      if (old) {
+        for (const f of ["appliedDate", "viewedDate", "savedDate"]) if (old[f]) existing[f] = old[f];
+        if (old.viewedDate) existing.views = [old.viewedDate];
+        delete jobTracker[legacyKey(title, company)];
+      }
       changed = true;
     }
 
-    jobTracker[jobKey] = existing;
+    for (const [f, v] of [["title", title], ["company", company], ["location", location]]) {
+      if (v && existing[f] !== v) { existing[f] = v; changed = true; }
+    }
+
+    const before = JSON.stringify(existing);
+    if (status === "Applied" && !existing.appliedDate) existing.appliedDate = today;
+    if (status === "Saved" && !existing.savedDate) existing.savedDate = today;
+    // LinkedIn's "Viewed" label on a job we have no view for yet (viewed before the extension ran)
+    if (status === "Viewed" && !existing.viewedDate) addView(existing, today);
+    if (viewedNow) addView(existing, today);
+    // Sighting history: how long a posting keeps showing up in your lists
+    if (seen && existing.lastSeen !== today) {
+      existing.firstSeen = existing.firstSeen || today;
+      existing.lastSeen = today;
+      existing.seenDays = (existing.seenDays || 0) + 1;
+    }
+    if (JSON.stringify(existing) !== before) changed = true;
+
+    jobTracker[key] = existing;
   }
 
+  // Seen-only jobs pile up fast (every card you scroll past), so they're pruned
+  // first, oldest sighting first; jobs you viewed/saved/applied to are kept.
   const keys = Object.keys(jobTracker);
-  if (keys.length > 2000) {
-    const sorted = keys.sort((a, b) => {
-      const dA = jobTracker[a].appliedDate || jobTracker[a].viewedDate || jobTracker[a].savedDate || "0";
-      const dB = jobTracker[b].appliedDate || jobTracker[b].viewedDate || jobTracker[b].savedDate || "0";
-      return dA.localeCompare(dB);
-    });
-    for (let i = 0; i < sorted.length - 1500; i++) delete jobTracker[sorted[i]];
+  if (keys.length > 6000) {
+    const rank = (e) => (e.appliedDate || e.viewedDate || e.savedDate ? "1" : "0") +
+      (e.lastSeen || e.appliedDate || e.viewedDate || e.savedDate || "0");
+    const sorted = keys.sort((a, b) => rank(jobTracker[a]).localeCompare(rank(jobTracker[b])));
+    for (let i = 0; i < sorted.length - 5000; i++) delete jobTracker[sorted[i]];
     changed = true;
   }
 
-  await browserAPI.storage.local.set({ jobTracker });
+  if (changed) await browserAPI.storage.local.set({ jobTracker });
   return jobTracker;
 }
 
-async function handleTrackJobStatus({ jobKey, title, company, location, status }) {
-  if (!jobKey) return null;
-  const tracker = await handleTrackJobsBatch({ jobs: [{ jobKey, title, company, location, status }] });
-  return tracker[jobKey] || null;
+async function handleTrackJobStatus({ jobId, title, company, location, status }) {
+  if (!jobId) return null;
+  const tracker = await handleTrackJobsBatch({ jobs: [{ jobId, title, company, location, status }] });
+  return tracker["id:" + jobId] || null;
 }
 
 async function handleGetJobTracker() {
@@ -334,7 +386,23 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
 
 // ─── Message Router ───────────────────────────────────────────────────────────
 
+// A "!" on the toolbar icon when a jobs page clearly lists jobs but the content
+// script found no cards: LinkedIn changed its markup and the selectors need updating.
+function setPageHealth(tabId, ok) {
+  if (tabId == null || !browserAPI.action) return;
+  browserAPI.action.setBadgeText({ tabId, text: ok ? "" : "!" });
+  browserAPI.action.setBadgeBackgroundColor({ tabId, color: "#d93025" });
+  browserAPI.action.setTitle({ tabId, title: ok
+    ? "LinkedIn Commute Time settings"
+    : "LinkedIn Commute Time can't find the job cards on this page. LinkedIn probably changed its layout; see tests/README.md." });
+}
+
 browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+
+  if (message?.type === "PAGE_HEALTH") {
+    setPageHealth(_sender?.tab?.id, message.ok);
+    return false;
+  }
 
   if (message?.type === "GET_COMMUTE_TIMES") {
     handleGetCommuteTimes(message)

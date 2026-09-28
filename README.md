@@ -30,12 +30,20 @@ If you already have commute data (from NS, 9292, or a previous export), you can 
 - Runs 100% locally from browser storage with zero API calls
 
 ### 3. Application Tracker
-- Color-codes job cards on LinkedIn:
-  - Green border: Jobs you haven't opened yet
-  - Yellow border: Jobs you viewed or saved
-  - Red border: Jobs you applied to
-- Automatically records the date you applied and shows a badge next to the job title
-- Lets you export your application history to CSV (title, company, applied date, viewed date, saved date)
+Works on job search results and on the Jobs home page (including "More jobs for you"). Every job is tracked by its LinkedIn job ID.
+- Thin color bar on each job card:
+  - Faint green: jobs you haven't opened; stronger green with a **New** tag: first seen today
+  - Amber: jobs you viewed or saved
+  - Red (faded): jobs you applied to
+- Date tag next to LinkedIn's own status, e.g. `Applied 28 Sep` or `Viewed 28 Sep ×3`. Hover it for the full history (every day you opened the job, when it was saved, when it was first seen)
+- `Applied before 12 Aug`: you already applied to the same title at the same company under an older posting
+- `↻ 3 wks`: the posting has kept showing up in your lists for weeks (often hard to fill or repeatedly reposted)
+- Follow-up reminder: applications turn orange after 14 days and are listed in the popup
+- Commute badges are colored by duration (up to 45 min / up to 90 min / longer)
+- Popup settings: fade or hide applied jobs, fade jobs over a maximum commute, turn the New tag on/off
+- Export your history to CSV (dates, every view date, link to the job)
+
+If LinkedIn changes its layout and the extension can't find job cards on a page that clearly lists jobs, the toolbar icon shows a red **!**. See `tests/README.md` for how to check and fix it.
 
 ### 4. Privacy
 Everything is stored locally on your machine using Chrome's local storage. There are no external tracking servers, analytics, or accounts.
@@ -55,14 +63,14 @@ The extension is loaded in Developer Mode:
 Open the extension popup from your toolbar and choose how you want to set it up:
 
 ### Method A: Calculate with Maps API (easiest)
-1. In the popup, open the "Auto-Calculate" tab.
+1. In the popup, open "Commute setup", then the "Auto-Calculate" tab.
 2. Choose your provider (OpenRouteService is free; sign up at openrouteservice.org to get a key).
 3. Paste your API key and enter your home address or postal code.
 4. Pick your country and travel method, then click "Fetch & Apply".
 5. When it finishes, click "Export CSV" if you want to keep a local backup of the times.
 
 ### Method B: Manual CSV
-1. In the popup, stay on the "Upload File" tab.
+1. In the popup, open "Commute setup", then the "Upload File" tab.
 2. Set your home city.
 3. Upload a CSV file structured like this:
    ```csv

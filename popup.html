@@ -251,6 +251,41 @@
   .stat-card.applied .stat-number { color: var(--red); }
   .stat-card.viewed  .stat-number { color: var(--yellow); }
   .stat-card.total   .stat-number { color: var(--accent); }
+
+  /* ── Main vs. setup tabs ── */
+  .main-tabs .mode-tab { font-size: 12px; padding: 10px 0; }
+  .sub-tabs { background: var(--bg); }
+  .sub-tabs .mode-tab { font-size: 10px; padding: 7px 0; }
+
+  /* ── Jobs panel ── */
+  .toggle-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; font-size: 12px; cursor: pointer;
+  }
+  .toggle-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+  .num-input { width: 56px !important; padding: 3px 6px !important; text-align: center; }
+  .pill { font-style: normal; font-size: 10px; font-weight: 600; padding: 0 6px; border-radius: 8px; }
+  .pill-new { color: var(--accent); background: var(--accent-dim); }
+  .count-chip { color: var(--yellow); }
+
+  .job-list { display: flex; flex-direction: column; gap: 4px; }
+  .job-item {
+    display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+    padding: 6px 8px; border-radius: 6px; background: var(--surface);
+    color: var(--text); text-decoration: none;
+  }
+  .job-item:hover { background: var(--surface-hover); }
+  .job-item .ji-main { min-width: 0; }
+  .job-item .ji-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .job-item .ji-sub { font-size: 10px; color: var(--text-muted); }
+  .job-item .ji-age { font-size: 10px; color: var(--yellow); white-space: nowrap; }
+  .empty-note { font-size: 11px; color: var(--text-muted); }
+
+  .link-danger {
+    background: none; border: none; font-family: inherit; font-size: 10px;
+    color: var(--text-muted); cursor: pointer; text-decoration: underline;
+  }
+  .link-danger:hover { color: var(--red); }
 </style>
 </head>
 <body>
@@ -264,8 +299,63 @@
   </div>
 </div>
 
+<!-- Main Tabs -->
+<div class="mode-tabs main-tabs">
+  <button class="mode-tab active" id="tabJobs">Jobs</button>
+  <button class="mode-tab"        id="tabSetup">Commute setup</button>
+</div>
+
+<!-- ═══════════ JOBS PANEL ═══════════ -->
+<div id="panelJobs" class="panel active">
+
+  <div class="section">
+    <div class="section-title">On LinkedIn</div>
+    <label class="toggle-row"><input type="checkbox" id="prefFadeApplied" /> <span>Fade jobs I applied to</span></label>
+    <label class="toggle-row"><input type="checkbox" id="prefHideApplied" /> <span>Hide jobs I applied to</span></label>
+    <label class="toggle-row"><input type="checkbox" id="prefMarkNew" /> <span>Mark jobs I haven't seen before as <em class="pill pill-new">New</em></span></label>
+    <div class="toggle-row">
+      <span>Fade jobs with a commute over</span>
+      <input type="text" id="prefMaxCommute" inputmode="numeric" placeholder="off" class="num-input" />
+      <span>min</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Follow up <span class="count-chip" id="followupCount"></span></div>
+    <div id="followupList" class="job-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Application Tracker</div>
+    <div class="tracker-stats">
+      <div class="stat-card applied">
+        <div class="stat-number" id="statApplied">--</div>
+        <div class="stat-label">Applied</div>
+      </div>
+      <div class="stat-card total">
+        <div class="stat-number" id="statWeek">--</div>
+        <div class="stat-label">This week</div>
+      </div>
+      <div class="stat-card viewed">
+        <div class="stat-number" id="statViewed">--</div>
+        <div class="stat-label">Viewed only</div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:0;">
+      <button class="btn btn-ghost" id="exportTracker">Export CSV</button>
+    </div>
+    <div style="margin-top:8px;text-align:right;">
+      <button class="link-danger" id="clearTracker">Clear history</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════ SETUP PANEL ═══════════ -->
+<div id="panelSetup" class="panel">
+
 <!-- Mode Tabs -->
-<div class="mode-tabs">
+<div class="mode-tabs sub-tabs">
   <button class="mode-tab active" id="tabCsv">Upload File</button>
   <button class="mode-tab"        id="tabApi">Auto-Calculate</button>
 </div>
@@ -309,29 +399,6 @@ Rotterdam,Utrecht,30m</code>
     <p id="status" class="status-text"></p>
     <div class="btn-row" style="margin-top:8px;">
       <button class="btn btn-red" id="clearData">Clear Data</button>
-    </div>
-  </div>
-
-  <!-- Application Tracker (only shown on Upload File tab) -->
-  <div class="section">
-    <div class="section-title">Application Tracker</div>
-    <div class="tracker-stats">
-      <div class="stat-card total">
-        <div class="stat-number" id="statTotal">--</div>
-        <div class="stat-label">Tracked</div>
-      </div>
-      <div class="stat-card applied">
-        <div class="stat-number" id="statApplied">--</div>
-        <div class="stat-label">Applied</div>
-      </div>
-      <div class="stat-card viewed">
-        <div class="stat-number" id="statViewed">--</div>
-        <div class="stat-label">Viewed</div>
-      </div>
-    </div>
-    <div class="btn-row" style="margin-top:0;">
-      <button class="btn btn-green" id="exportTracker">Export CSV</button>
-      <button class="btn btn-red"   id="clearTracker">Clear History</button>
     </div>
   </div>
 
@@ -420,6 +487,8 @@ Rotterdam,Utrecht,30m</code>
   </div>
 
 </div>
+
+</div><!-- /panelSetup -->
 
 <script src="popup.js"></script>
 </body>

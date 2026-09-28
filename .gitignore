@@ -7,3 +7,5 @@ parse_html.py
 inspect_status.py
 *.html
 !popup.html
+*LinkedIn_files/
+tests/fixtures/
