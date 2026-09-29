@@ -41,7 +41,7 @@ $("tabSetup").addEventListener("click", () => setMainTab("setup"));
 
 // ─── Display preferences (read live by the content script) ────────────────────
 
-const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, titleFilter: "" };
+const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, maxCommuteMode: "transit", titleFilter: "" };
 
 async function loadPrefs() {
   const { displayPrefs = {} } = await browserAPI.storage.local.get("displayPrefs");
@@ -50,21 +50,58 @@ async function loadPrefs() {
   $("prefHideApplied").checked = p.hideApplied;
   $("prefMarkNew").checked     = p.markNew;
   $("prefMaxCommute").value    = p.maxCommute || "";
+  $("prefMaxCommuteMode").value = p.maxCommuteMode;
   $("prefTitleFilter").value   = p.titleFilter || "";
 }
 
 async function savePrefs() {
   const max = parseInt($("prefMaxCommute").value, 10);
+  const { displayPrefs: old = {} } = await browserAPI.storage.local.get("displayPrefs");
   await browserAPI.storage.local.set({ displayPrefs: {
+    ...old,
     fadeApplied: $("prefFadeApplied").checked,
     hideApplied: $("prefHideApplied").checked,
     markNew:     $("prefMarkNew").checked,
     maxCommute:  max > 0 ? max : 0,
+    maxCommuteMode: $("prefMaxCommuteMode").value,
     titleFilter: $("prefTitleFilter").value.trim(),
   }});
 }
 for (const id of ["prefFadeApplied", "prefHideApplied", "prefMarkNew"]) $(id).addEventListener("change", savePrefs);
 $("prefMaxCommute").addEventListener("change", savePrefs);
+$("prefMaxCommuteMode").addEventListener("change", savePrefs);
+
+// ─── Which transport modes to show on job cards ───────────────────────────────
+
+const MODE_LABELS = { transit: "🚆 Public transport", car: "🚗 Car", cycling: "🚴 Bike", walking: "🚶 Walking" };
+
+async function renderModeToggles() {
+  const { commuteTimes = {}, displayPrefs = {} } = await browserAPI.storage.local.get(["commuteTimes", "displayPrefs"]);
+  const show = displayPrefs.showModes || {};
+  const box  = $("modeToggles");
+  box.replaceChildren();
+  for (const [mode, label] of Object.entries(MODE_LABELS)) {
+    const count = Object.keys(commuteTimes[mode] || {}).length;
+    const builtIn = mode === "transit" || mode === "car";
+    if (!builtIn && !count) continue; // only modes there are times for
+    const row = document.createElement("label");
+    row.className = "toggle-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = show[mode] !== false;
+    cb.addEventListener("change", async () => {
+      const { displayPrefs: p = {} } = await browserAPI.storage.local.get("displayPrefs");
+      await browserAPI.storage.local.set({ displayPrefs: { ...p, showModes: { ...(p.showModes || {}), [mode]: cb.checked } } });
+    });
+    const text = document.createElement("span");
+    text.textContent = label + (count ? ` · ${count} places` : " (built-in, from Rotterdam)");
+    row.append(cb, text);
+    box.append(row);
+  }
+}
+browserAPI.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.commuteTimes) renderModeToggles();
+});
 $("prefTitleFilter").addEventListener("change", async () => { await savePrefs(); flashSaved($("titleFilterSaved")); });
 
 // ─── Company rules (hide / note), shared with the content script ──────────────
@@ -138,10 +175,12 @@ const uploadZone      = $("uploadZone");
 const csvFileEl       = $("csvFile");
 
 async function checkCustomData() {
-  const { customDb, homeCity } = await browserAPI.storage.local.get(["customDb","homeCity"]);
+  const { commuteTimes = {}, homeCity } = await browserAPI.storage.local.get(["commuteTimes","homeCity"]);
   homeCityEl.value = homeCity || "Rotterdam";
-  if (customDb) {
-    setStatus(csvStatus, `Custom data loaded: ${Object.keys(customDb).length} locations.`, "success");
+  const counts = Object.entries(commuteTimes).filter(([, db]) => Object.keys(db).length)
+    .map(([mode, db]) => `${MODE_LABELS[mode] || mode} ${Object.keys(db).length}`);
+  if (counts.length) {
+    setStatus(csvStatus, `Your times: ${counts.join(" · ")} places.`, "success");
   } else {
     setStatus(csvStatus, "Using default database.", "");
   }
@@ -156,7 +195,7 @@ saveHomeCityBtn.addEventListener("click", async () => {
 });
 
 $("clearData").addEventListener("click", async () => {
-  await browserAPI.storage.local.remove(["customDb"]);
+  await browserAPI.storage.local.remove(["commuteTimes", "customDb"]);
   csvFileEl.value = "";
   setStatus(csvStatus, "Data cleared.", "");
   checkCustomData();
@@ -185,7 +224,7 @@ function handleCSVFile(file) {
       if (destIdx === -1 || timeIdx === -1)
         throw new Error("CSV must have 'Destination' and 'Travel_Time' columns.");
 
-      const db = {}; let autoOrigin = null; let detectedMode = null;
+      const byMode = {}; let autoOrigin = null;
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim(); if (!line) continue;
         const vals = []; let cur = "", inQ = false;
@@ -200,31 +239,30 @@ function handleCSVFile(file) {
           autoOrigin = vals[oi].toLowerCase().replace(/netherlands/g,"").replace(/on-site/g,"")
             .trim().split(",")[0].trim().replace(/\s+/g,"-");
         }
-        if (modeIdx !== -1 && vals[modeIdx] && !detectedMode) {
+        let mode = "transit";
+        if (modeIdx !== -1 && vals[modeIdx]) {
           const m = vals[modeIdx].toLowerCase();
-          if (m.includes("car") || m.includes("driving") || m.includes("🚗")) detectedMode = "car";
-          else if (m.includes("cycl") || m.includes("bike") || m.includes("bicycl") || m.includes("🚴")) detectedMode = "cycling";
-          else if (m.includes("walk") || m.includes("foot") || m.includes("🚶")) detectedMode = "walking";
-          else if (m.includes("transit") || m.includes("train") || m.includes("bus") || m.includes("🚆")) detectedMode = "transit";
+          if (m.includes("car") || m.includes("driving") || m.includes("🚗")) mode = "car";
+          else if (m.includes("cycl") || m.includes("bike") || m.includes("bicycl") || m.includes("🚴")) mode = "cycling";
+          else if (m.includes("walk") || m.includes("foot") || m.includes("🚶")) mode = "walking";
         }
         if (vals.length > Math.max(destIdx, timeIdx)) {
           let dest = vals[destIdx], time = vals[timeIdx];
           if (time && time !== "N/A" && time !== "No Results" && time.trim()) {
             dest = dest.toLowerCase().replace(/netherlands/g,"").replace(/on-site/g,"")
               .trim().split(",")[0].trim().replace(/\s+/g,"-");
-            if (dest) db[dest] = time;
+            if (dest) (byMode[mode] ||= {})[dest] = time;
           }
         }
       }
-      if (!Object.keys(db).length) throw new Error("No valid data found.");
-      const toSet = { customDb: db };
+      const modes = Object.keys(byMode);
+      if (!modes.length) throw new Error("No valid data found.");
+      // Replaces the saved times of the modes in the file; other modes stay
+      const { commuteTimes = {} } = await browserAPI.storage.local.get("commuteTimes");
+      const toSet = { commuteTimes: { ...commuteTimes, ...byMode } };
       if (autoOrigin) { toSet.homeCity = autoOrigin; homeCityEl.value = autoOrigin; }
-      if (detectedMode) {
-        toSet.transportProfile = detectedMode;
-        transportBtns.forEach(b => b.classList.toggle("active", b.dataset.profile === detectedMode));
-      }
       await browserAPI.storage.local.set(toSet);
-      setStatus(csvStatus, `Loaded ${Object.keys(db).length} locations${detectedMode ? ` (${detectedMode})` : ""}.`, "success");
+      setStatus(csvStatus, `Loaded ${modes.map(m => `${MODE_LABELS[m]} ${Object.keys(byMode[m]).length}`).join(" · ")} places.`, "success");
     } catch (err) { setStatus(csvStatus, err.message, "error"); }
   };
   reader.readAsText(file);
@@ -243,6 +281,7 @@ const transitNote    = $("transitNote");
 const transportBtns  = document.querySelectorAll(".transport-btn[data-profile]");
 const providerBtns   = document.querySelectorAll(".provider-btn[data-provider]");
 const countrySelect  = $("countrySelect");
+const fetchRadiusEl  = $("fetchRadius");
 const fetchBtn       = $("fetchBtn");
 const stopFetchBtn   = $("stopFetchBtn");
 const logWrap        = $("logWrap");
@@ -374,8 +413,11 @@ fetchBtn.addEventListener("click", async () => {
   if (!homeAddress) { appendLog(["Please enter your home address first."]); logWrap.classList.add("visible"); return; }
   if (!countrySelect.value) { appendLog(["Please select a country."]); logWrap.classList.add("visible"); return; }
 
+  const radius = parseInt(fetchRadiusEl.value, 10);
+  const maxKm  = radius > 0 ? radius : 0;   // empty → every city in the country
+
   // Save inputs before fetching
-  await browserAPI.storage.local.set({ orsApiKey: apiKey, homeAddress });
+  await browserAPI.storage.local.set({ orsApiKey: apiKey, homeAddress, fetchRadiusKm: maxKm });
   flashSaved(apiKeySaved); flashSaved(homeSaved);
 
   const data  = await loadCitiesData();
@@ -393,7 +435,7 @@ fetchBtn.addEventListener("click", async () => {
 
   await browserAPI.runtime.sendMessage({
     type: "START_API_FETCH",
-    cities, homeAddress, apiKey,
+    cities, homeAddress, apiKey, maxKm,
     profile: transportProfile,
     provider: apiProvider,
   });
@@ -452,14 +494,14 @@ function stopPolling() {
 // ── Export CSV ────────────────────────────────────────────────────────────────
 
 exportBtn.addEventListener("click", async () => {
-  const { customDb = {}, homeAddress = "Home", transportProfile = "car" } =
-    await browserAPI.storage.local.get(["customDb","homeAddress","transportProfile"]);
-  const entries = Object.entries(customDb);
+  const { commuteTimes = {}, homeAddress = "Home" } =
+    await browserAPI.storage.local.get(["commuteTimes","homeAddress"]);
+  const entries = Object.entries(commuteTimes).flatMap(([mode, db]) => Object.entries(db).map(([dest, time]) => [dest, time, mode]));
   if (!entries.length) { appendLog(["No data to export."]); return; }
   const origin = homeAddress.split(/[,\n]/)[0].trim() || "Home";
   const rows   = ["Origin,Destination,Travel_Time,Mode"];
-  for (const [dest, time] of entries) {
-    rows.push(`${origin},${dest.replace(/-/g," ").replace(/\b\w/g, c=>c.toUpperCase())},${time},${transportProfile}`);
+  for (const [dest, time, mode] of entries) {
+    rows.push(`${origin},${dest.replace(/-/g," ").replace(/\b\w/g, c=>c.toUpperCase())},${time},${mode}`);
   }
   const blob = new Blob([rows.join("\n")], { type: "text/csv" });
   const url  = URL.createObjectURL(blob);
@@ -470,7 +512,7 @@ exportBtn.addEventListener("click", async () => {
 
 clearApiBtn.addEventListener("click", async () => {
   if (!confirm("Clear all fetched commute data?")) return;
-  await browserAPI.storage.local.remove(["customDb"]);
+  await browserAPI.storage.local.remove(["commuteTimes", "customDb"]);
   appendLog(["Data cleared."]);
   logWrap.classList.add("visible");
   exportBtn.style.display = "none";
@@ -560,7 +602,7 @@ $("clearTracker").addEventListener("click", async () => {
 async function init() {
   const stored = await browserAPI.storage.local.get([
     "activeMode","orsApiKey","homeAddress","transportProfile",
-    "selectedCountry","homeCity","apiProvider",
+    "selectedCountry","homeCity","apiProvider","fetchRadiusKm",
   ]);
 
   await setMode(stored.activeMode || "csv");
@@ -573,6 +615,8 @@ async function init() {
   applyProvider(stored.apiProvider || "ors");
   if (stored.orsApiKey)    orsKeyEl.value      = stored.orsApiKey;
   if (stored.homeAddress)  homeAddressEl.value = stored.homeAddress;
+  const radiusKm = stored.fetchRadiusKm ?? 100;
+  fetchRadiusEl.value = radiusKm > 0 ? radiusKm : "";
 
   // Migrate old ORS profile names
   const MIGRATE = {"driving-car":"car","cycling-regular":"cycling","foot-walking":"walking"};
@@ -613,6 +657,7 @@ async function initJobsTab() {
   setMainTab(popupTab || "jobs");
   await loadPrefs();
   await renderCompanies();
+  await renderModeToggles();
   await updateTrackerStatus();
 }
 

@@ -1,64 +1,100 @@
 const browserAPI = typeof browser !== "undefined" ? browser : chrome;
 
-// ─── Preloaded DB ────────────────────────────────────────────────────────────
+// ─── Built-in times (from central Rotterdam) ─────────────────────────────────
 
-let preloadedDb = null;
-async function getPreloadedDb() {
-  if (preloadedDb !== null) return preloadedDb;
-  try {
-    const res  = await fetch(browserAPI.runtime.getURL("db.json"));
-    preloadedDb = await res.json();
-  } catch {
-    preloadedDb = {};
+const BUILT_IN_FILES = { transit: "db.json", car: "db_car.json" };
+const builtIn = {};
+async function getBuiltIn(mode) {
+  if (!BUILT_IN_FILES[mode]) return {};
+  if (!builtIn[mode]) {
+    try {
+      const res = await fetch(browserAPI.runtime.getURL(BUILT_IN_FILES[mode]));
+      builtIn[mode] = await res.json();
+    } catch {
+      builtIn[mode] = {};
+    }
   }
-  return preloadedDb;
+  return builtIn[mode];
 }
 
-// ─── Commute Lookup (DB / CSV) ───────────────────────────────────────────────
+// ─── Saved commute times ─────────────────────────────────────────────────────
 
+// Times are kept per transport mode, so someone can see both public transport and
+// car: { transit: { "delft": "16m", ... }, car: {...}, cycling: {...}, walking: {...} }.
+// The bundled times from Rotterdam (db.json: public transport, db_car.json: car)
+// fill in under each mode; the user's own times for a place win.
+const MODES = ["transit", "car", "cycling", "walking"];
+
+async function loadCommuteTimes() {
+  const { commuteTimes = {}, customDb, transportProfile } =
+    await browserAPI.storage.local.get(["commuteTimes", "customDb", "transportProfile"]);
+  if (!customDb) return commuteTimes;
+  // Before 1.5.0 there was one customDb, labelled by the last transport mode used
+  const legacy = { "driving-car": "car", "cycling-regular": "cycling", "foot-walking": "walking" };
+  const guess  = legacy[transportProfile] || transportProfile;
+  const mode   = MODES.includes(guess) ? guess : "car";
+  const merged = { ...commuteTimes, [mode]: { ...customDb, ...(commuteTimes[mode] || {}) } };
+  await browserAPI.storage.local.set({ commuteTimes: merged });
+  await browserAPI.storage.local.remove("customDb");
+  return merged;
+}
+
+async function saveModeTimes(mode, times) {
+  const all = await loadCommuteTimes();
+  await browserAPI.storage.local.set({ commuteTimes: { ...all, [mode]: times } });
+}
+
+// ─── Commute Lookup ──────────────────────────────────────────────────────────
+
+const ALIASES = {
+  "the-hague":    "den-haag",
+  "s-gravenhage": "den-haag",
+  "den-bosch":    "s-hertogenbosch",
+};
+
+// Keys are citySlug()s ("'s-Hertogenbosch" → "s-hertogenbosch", accents dropped).
+const locKey = (s) => citySlug(s.toLowerCase().replace(/netherlands|on-site/g, "").split(",")[0]);
+
+function lookupTime(db, loc) {
+  const clean = locKey(loc);
+  // Raw form too, for times uploaded from a CSV before keys were normalised
+  const raw   = loc.toLowerCase().split(",")[0].trim().replace(/\s+/g, "-");
+  const hit   = db[clean] || db[raw] || db[loc] || db[ALIASES[clean]];
+  if (hit) return hit;
+  for (const dbKey in db) {
+    const escaped = dbKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex   = new RegExp(`(?:^|[- ])${escaped}(?:[- ]|$)`, "i");
+    if (regex.test(clean) || (clean.length > 4 && dbKey.includes(clean))) return db[dbKey];
+  }
+  return null;
+}
+
+// → { location: [{ mode: "transit", time: "42m" }, { mode: "car", time: "25m" }] }
 async function handleGetCommuteTimes({ locations }) {
   if (!locations?.length) return {};
 
-  const preloaded = await getPreloadedDb();
-  const { customDb = {}, homeCity } = await browserAPI.storage.local.get(["customDb", "homeCity"]);
-  const activeDb = { ...preloaded, ...customDb };
+  const saved     = await loadCommuteTimes();
+  const { homeCity, displayPrefs = {} } = await browserAPI.storage.local.get(["homeCity", "displayPrefs"]);
+  const show = displayPrefs.showModes || {};
 
-  const aliases = {
-    "the-hague":    "den-haag",
-    "s-gravenhage": "den-haag",
-  };
-
-  let currentHome = (homeCity || "Rotterdam")
-    .toLowerCase().replace(/netherlands/g, "").replace(/on-site/g, "").trim()
-    .split(",")[0].trim().replace(/\s+/g, "-");
-
-  aliases[currentHome] = "0m";
-
-  const results = {};
-  for (const loc of locations) {
-    let clean = loc.toLowerCase().replace(/netherlands/g, "").replace(/on-site/g, "").trim();
-    clean = clean.split(",")[0].trim().replace(/\s+/g, "-");
-
-    let hit = activeDb[clean] || activeDb[loc];
-
-    if (!hit && aliases[clean]) {
-      hit = activeDb[aliases[clean]] || aliases[clean];
-    }
-
-    if (!hit) {
-      for (const dbKey in activeDb) {
-        const escaped = dbKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex   = new RegExp(`(?:^|[- ])${escaped}(?:[- ]|$)`, "i");
-        if (regex.test(clean) || (clean.length > 4 && dbKey.includes(clean))) {
-          hit = activeDb[dbKey];
-          break;
-        }
-      }
-    }
-
-    if (hit) results[loc] = hit;
+  const sources = [];
+  for (const m of MODES) {
+    if (show[m] === false) continue;
+    const db = { ...(await getBuiltIn(m)), ...(saved[m] || {}) };
+    if (Object.keys(db).length) sources.push([m, db]);
   }
 
+  const home = locKey(homeCity || "Rotterdam");
+  const results = {};
+  for (const loc of locations) {
+    if (locKey(loc) === home) { results[loc] = [{ mode: "home", time: "0m" }]; continue; }
+    const times = [];
+    for (const [mode, db] of sources) {
+      const time = lookupTime(db, loc);
+      if (time) times.push({ mode, time });
+    }
+    if (times.length) results[loc] = times;
+  }
   return results;
 }
 
@@ -178,6 +214,8 @@ async function handleGetJobTracker() {
 const ORS_BASE            = "https://api.openrouteservice.org";
 const GOOGLE_BASE         = "https://maps.googleapis.com/maps/api";
 const REQUEST_INTERVAL_MS = 1800; // ~33 req/min → safely under 40/min limit
+const RATE_LIMIT_WAIT_MS  = 60000; // after a 429, let the per-minute window reset
+const RATE_LIMIT_RETRIES  = 3;     // still 429 after this many waits → treat as the daily quota
 
 // Generic profile → provider-specific value
 const PROFILE_MAP = {
@@ -270,7 +308,11 @@ async function orsDirections(apiKey, orsProfile, originCoord, destCoord) {
   const res  = await fetch(url, { headers: { Authorization: apiKey, Accept: "application/json, application/geo+json" } });
   if (!res.ok) {
     if (res.status === 404) return null;
-    throw new Error(`ORS directions HTTP ${res.status}`);
+    const err = new Error(`ORS directions HTTP ${res.status}`);
+    err.status = res.status;
+    // ORS reports the daily quota in these headers; 0 left means waiting a minute won't help
+    err.quotaExhausted = res.headers.get("x-ratelimit-remaining") === "0";
+    throw err;
   }
   const json     = await res.json();
   const duration = json.features?.[0]?.properties?.summary?.duration;
@@ -302,7 +344,15 @@ async function googleDirections(apiKey, googleMode, originCoord, destCoord) {
 
 // ── Unified fetch runner ──────────────────────────────────────────────────────
 
-async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors" }) {
+// Straight-line distance between two {lat, lon} points
+function distanceKm(a, b) {
+  const rad = d => d * Math.PI / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 +
+            Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+}
+
+async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors", maxKm = 0 }) {
   fetchState = { running: true, done: 0, total: cities.length, saved: 0, error: null, log: [] };
 
   const profileMap    = PROFILE_MAP[provider] || PROFILE_MAP.ors;
@@ -319,9 +369,8 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
     ? (key, _, orig, dest) => googleDirections(key, mappedProfile, orig, dest)
     : (key, prof, orig, dest) => orsDirections(key, prof, orig, dest);
 
-  // Load existing customDb so we merge, not wipe
-  const { customDb = {} } = await browserAPI.storage.local.get("customDb");
-  const db = { ...customDb };
+  // Add to this mode's saved times instead of wiping them
+  const db = { ...((await loadCommuteTimes())[profile] || {}) };
 
   addLog(`Starting: ${cities.length} cities via ${provider === "google" ? "Google Maps" : "OpenRouteService"} (${mappedProfile})`);
 
@@ -339,6 +388,20 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
     return;
   }
 
+  // Only cities within reach of home: fetching all 300 of a big country's cities
+  // mostly spends the daily API quota on places nobody commutes to.
+  if (maxKm > 0) {
+    const all = cities.length;
+    cities = cities.filter(c => c.lat == null || distanceKm(homeCoord, c) <= maxKm);
+    fetchState.total = cities.length;
+    addLog(`${cities.length} of ${all} cities are within ${maxKm} km of home.`);
+    if (!cities.length) {
+      fetchState.running = false;
+      fetchState.error   = `No cities within ${maxKm} km of home. Increase the distance or clear it to fetch every city.`;
+      return;
+    }
+  }
+
   for (let i = 0; i < cities.length; i++) {
     if (!fetchState.running) { addLog("Stopped."); break; }
 
@@ -351,12 +414,34 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
       if (city.lat != null && city.lon != null) {
         destCoord = { lat: city.lat, lon: city.lon };
       } else {
-        destCoord = await geocodeFn(apiKey, city.name);
-        await sleep(REQUEST_INTERVAL_MS);
+        try {
+          destCoord = await geocodeFn(apiKey, city.name);
+        } finally {
+          await sleep(REQUEST_INTERVAL_MS);
+        }
       }
 
-      const duration = await directionsFn(apiKey, mappedProfile, homeCoord, destCoord);
-      await sleep(REQUEST_INTERVAL_MS);
+      // Rate-limited (429): wait for the per-minute window and retry this city,
+      // instead of firing the rest of the list at the API and failing them all.
+      let duration;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          duration = await directionsFn(apiKey, mappedProfile, homeCoord, destCoord);
+          break;
+        } catch (err) {
+          if (err.status !== 429) throw err;
+          if (err.quotaExhausted || attempt >= RATE_LIMIT_RETRIES) {
+            err.message = "Daily API limit reached";
+            err.stopRun = true;
+            throw err;
+          }
+          addLog(`${city.name}: rate limited, waiting 60s before retrying (${attempt + 1}/${RATE_LIMIT_RETRIES})...`);
+          await sleep(RATE_LIMIT_WAIT_MS);
+          if (!fetchState.running) throw new Error("Stopped");
+        } finally {
+          await sleep(REQUEST_INTERVAL_MS);
+        }
+      }
 
       if (duration != null) {
         const time = fmtDuration(duration);
@@ -364,19 +449,24 @@ async function runFetch({ cities, homeAddress, apiKey, profile, provider = "ors"
         fetchState.saved++;
         addLog(`${city.name}: ${time}`);
         if (fetchState.saved % 10 === 0) {
-          await browserAPI.storage.local.set({ customDb: db, transportProfile: profile });
+          await saveModeTimes(profile, db);
           await saveFetchState();
         }
       } else {
         addLog(`${city.name}: no route found`);
       }
     } catch (err) {
+      if (err.stopRun) {
+        addLog(`${err.message} — stopped at ${city.name} (${i} / ${cities.length}). Saved so far is kept; try again tomorrow.`);
+        fetchState.error = `${err.message}. ${fetchState.saved} cities saved.`;
+        break;
+      }
       addLog(`${city.name}: ${err.message}`);
       console.warn(`[commute-ext] fetch failed for ${city.name}:`, err.message);
     }
   }
 
-  await browserAPI.storage.local.set({ customDb: db, transportProfile: profile });
+  await saveModeTimes(profile, db);
   fetchState.done    = cities.length;
   fetchState.running = false;
   addLog(`Finished: ${fetchState.saved} / ${cities.length} cities saved.`);
@@ -461,6 +551,7 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 const JOB_PAGES = ["https://www.linkedin.com/jobs/*", "https://www.linkedin.com/company/*/jobs*"];
 
 browserAPI.runtime.onInstalled.addListener(() => {
+  loadCommuteTimes(); // moves pre-1.5.0 customDb into commuteTimes
   browserAPI.contextMenus.removeAll(() => {
     browserAPI.contextMenus.create({ id: "lc-hide-company", title: "Hide this company", contexts: ["all"], documentUrlPatterns: JOB_PAGES });
     browserAPI.contextMenus.create({ id: "lc-note-company", title: "Note on this company…", contexts: ["all"], documentUrlPatterns: JOB_PAGES });

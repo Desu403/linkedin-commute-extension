@@ -38,7 +38,11 @@ STUB = """
       onInstalled: { addListener() {} },
       sendMessage: (msg) => {
         if (msg.type === "GET_COMMUTE_TIMES") {
-          const r = {}; for (const l of msg.locations) r[l] = "42m"; return Promise.resolve(r);
+          // Every other place gets a second mode, so both badge layouts are exercised
+          const r = {};
+          msg.locations.forEach((l, i) => r[l] = i %% 2 ? [{ mode: "transit", time: "42m" }]
+                                                      : [{ mode: "transit", time: "1h 5m" }, { mode: "car", time: "25m" }]);
+          return Promise.resolve(r);
         }
         if (msg.type === "PAGE_HEALTH") return Promise.resolve();
         return new Promise((resolve) => { for (const fn of listeners) fn(msg, {}, resolve); });

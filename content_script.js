@@ -61,46 +61,22 @@ function requestCommuteTimes(locations) {
   }
 }
 
-const PROFILE_ICONS = {
-  car: "🚗",
-  cycling: "🚴",
-  walking: "🚶",
-  transit: "🚆",
+const MODE_INFO = {
+  transit: { icon: "🚆", label: "Public transport" },
+  car:     { icon: "🚗", label: "Car" },
+  cycling: { icon: "🚴", label: "Bike" },
+  walking: { icon: "🚶", label: "Walking" },
+  home:    { icon: "🏠", label: "Home" },
 };
 
-let currentTransportIcon = "🚆";
-
-async function updateCurrentTransportIcon() {
-  try {
-    const { transportProfile, customDb } = await browserAPI.storage.local.get([
-      "transportProfile",
-      "customDb",
-    ]);
-    if (transportProfile && PROFILE_ICONS[transportProfile]) {
-      currentTransportIcon = PROFILE_ICONS[transportProfile];
-    } else if (customDb && Object.keys(customDb).length > 0) {
-      currentTransportIcon = "🚗";
-    } else {
-      currentTransportIcon = "🚆";
-    }
-  } catch (e) {
-    currentTransportIcon = "🚆";
-  }
-}
-
-function refreshAllBadges() {
-  const badges = document.querySelectorAll(".commute-badge");
-  for (const badge of badges) {
-    const text = badge.textContent || "";
-    const match = text.match(/\d+[hm].*$/);
-    if (match) {
-      badge.textContent = `${currentTransportIcon} ${match[0]}`;
-    }
-  }
+// Saved times or the modes to show changed: drop the badges and let the next pass redraw them
+function clearCommuteBadges() {
+  for (const badge of document.querySelectorAll(".commute-badge")) badge.remove();
+  for (const el of document.querySelectorAll("[data-commute-badge]")) delete el.dataset.commuteBadge;
 }
 
 // Display preferences, set on the popup's Jobs tab
-const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, titleFilter: "" };
+const DEFAULT_PREFS = { fadeApplied: true, hideApplied: false, markNew: true, maxCommute: 0, maxCommuteMode: "transit", titleFilter: "" };
 let prefs = { ...DEFAULT_PREFS };
 let companyRules = {}; // companyKey -> { name, hidden, note }
 async function loadPrefs() {
@@ -138,10 +114,11 @@ function titleFilterRegexes() {
 if (browserAPI.storage?.onChanged) {
   browserAPI.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    if (changes.transportProfile || changes.customDb) {
-      updateCurrentTransportIcon().then(() => {
-        refreshAllBadges();
-      });
+    const modesChanged = changes.displayPrefs &&
+      JSON.stringify(changes.displayPrefs.oldValue?.showModes) !== JSON.stringify(changes.displayPrefs.newValue?.showModes);
+    if (changes.commuteTimes || modesChanged) {
+      clearCommuteBadges();
+      scheduleProcess();
     }
     if (changes.displayPrefs || changes.companyRules) {
       if (changes.displayPrefs) prefs = { ...DEFAULT_PREFS, ...(changes.displayPrefs.newValue || {}) };
@@ -158,14 +135,43 @@ function commuteMinutes(text) {
   return (h ? +h[1] * 60 : 0) + (m ? +m[1] : 0);
 }
 
-function injectBadge(afterEl, timeText) {
+const durationClass = (mins) => mins == null ? "" : mins <= 45 ? " is-short" : mins <= 90 ? " is-mid" : " is-long";
+
+// One pill per transport mode, each colored by its own duration: "🚆 42m" "🚗 25m"
+function injectBadge(afterEl, times) {
   const badge = document.createElement("span");
-  const mins = commuteMinutes(timeText);
-  badge.className = "commute-badge" + (mins == null ? "" : mins <= 45 ? " is-short" : mins <= 90 ? " is-mid" : " is-long");
-  badge.textContent = `${currentTransportIcon} ${timeText}`;
+  // Minutes per mode, for the "commute over X min" filter
+  const minutes = {};
+  for (const t of times) { const m = commuteMinutes(t.time); if (m != null) minutes[t.mode] = m; }
+  badge.dataset.minutes = JSON.stringify(minutes);
+  badge.title = times.map(t => `${MODE_INFO[t.mode]?.label || t.mode}: ${t.time}`).join(" · ");
+  const text  = t => `${MODE_INFO[t.mode]?.icon || ""} ${t.time}`;
+  if (times.length === 1) {
+    badge.className = "commute-badge" + durationClass(commuteMinutes(times[0].time));
+    badge.textContent = text(times[0]);
+  } else {
+    badge.className = "commute-badge is-multi";
+    for (const t of times) {
+      const pill = document.createElement("span");
+      pill.className = "commute-time" + durationClass(commuteMinutes(t.time));
+      pill.textContent = text(t);
+      badge.appendChild(pill);
+    }
+  }
   afterEl.appendChild(badge);
 }
 
+
+// The time the "fade jobs over X min" filter judges a card by: the chosen mode
+// (or the fastest shown). A card without a time for that mode isn't faded.
+function filterMinutes(badge) {
+  if (!badge?.dataset.minutes) return null;
+  const minutes = JSON.parse(badge.dataset.minutes);
+  if ("home" in minutes) return 0;
+  const values = Object.values(minutes);
+  if (prefs.maxCommuteMode === "fastest") return values.length ? Math.min(...values) : null;
+  return minutes[prefs.maxCommuteMode] ?? null;
+}
 
 // ── Job card discovery ──────────────────────────────────────────────
 // Every card is tied to LinkedIn's numeric job id, so the same job is never
@@ -331,7 +337,6 @@ function currentlyOpenJobId() {
 // ── Commute badges ──────────────────────────────────────────────────
 
 async function addCommuteBadges(cards) {
-  await updateCurrentTransportIcon();
   const locations = new Map(); // sanitized location -> [locEl]
   const want = (locEl) => {
     if (!locEl || locEl.dataset.commuteBadge || locEl.querySelector(".commute-badge")) return;
@@ -552,7 +557,7 @@ async function processPage() {
     const isNew = prefs.markNew && hasHistory && !seen && entry?.firstSeen === today;
 
     const commuteEl = card.el.querySelector(".commute-badge");
-    const mins = commuteEl ? commuteMinutes(commuteEl.textContent) : null;
+    const mins = filterMinutes(commuteEl);
     const tooFar = prefs.maxCommute > 0 && mins != null && mins > prefs.maxCommute;
 
     const rule = companyRules[companyKey(card.info.company)];

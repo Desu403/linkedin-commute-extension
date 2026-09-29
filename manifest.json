@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Commute Time",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Shows commute time from your home to each job on LinkedIn's job search page.",
   "permissions": ["storage", "contextMenus"],
   "icons": {
@@ -16,7 +16,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["cities_by_country.json", "db.json"],
+      "resources": ["cities_by_country.json", "db.json", "db_car.json"],
       "matches": ["<all_urls>"]
     }
   ],

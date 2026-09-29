@@ -14,18 +14,23 @@ It also tracks your job hunting activity so you don't lose track of where you've
 
 ## Main features
 
+Works right after installing if you live in Rotterdam: public transport and car times from central Rotterdam to about 570 Dutch towns are built in, shown side by side on every job (🚆 41m 🚗 56m). Anywhere else, use Auto-Calculate or upload your own times.
+
 ### 1. Auto-Calculate (Maps API)
 Instead of preparing a file yourself, you can let the extension calculate travel times automatically:
 - Supports OpenRouteService (free tier: 2000 directions/day, 3000 geocoding requests/day, no credit card needed)
 - Supports Google Maps API (requires billing, supports transit/trains)
-- Comes bundled with coordinates for over 6,500 cities across 32 countries (Europe and the Americas), so it only needs 1 API request per city instead of geocoding everything from scratch
+- Comes bundled with coordinates for over 19,000 cities across 246 countries and territories (islands included), so it only needs 1 API request per city instead of geocoding everything from scratch
+- Only fetches cities within a distance of home (100 km by default), so big countries don't use up the daily API quota on places you'd never commute to
+- Waits and retries when the API rate limit is hit, and stops cleanly with a message when the daily limit is reached
 - Transport options: car, cycling, walking, or transit (which can be activated only via Google Maps)
+- Times are kept per transport mode, so you can have several side by side: fetch car times and each job shows both, e.g. 🚆 42m 🚗 25m. Pick which ones to show under "Show commute by" in the Jobs tab. "Fade commutes over X min by …" lets you choose which mode the limit applies to (train by default, car, bike, walking, or the fastest)
 - Shows a live log of calculations as they happen
 - Lets you export the calculated times as a CSV file so you can calculate once and reuse the file without using your API quota again
 
 ### 2. Manual CSV Upload
 If you already have commute data (from NS, 9292, or a previous export), you can just upload a `.csv` file:
-- File format: `Origin,Destination,Travel_Time`
+- File format: `Origin,Destination,Travel_Time` plus an optional `Mode` column (`transit`, `car`, `cycling`, `walking`; public transport if missing)
 - Automatically detects your home city from the file and treats it as a 0m commute
 - Runs 100% locally from browser storage with zero API calls
 
@@ -68,7 +73,7 @@ Open the extension popup from your toolbar and choose how you want to set it up:
 1. In the popup, open "Commute setup", then the "Auto-Calculate" tab.
 2. Choose your provider (OpenRouteService is free; sign up at openrouteservice.org to get a key).
 3. Paste your API key and enter your home address or postal code.
-4. Pick your country and travel method, then click "Fetch & Apply".
+4. Pick your country and travel method, set how far from home to look (clear it to fetch every city), then click "Fetch & Apply".
 5. When it finishes, click "Export CSV" if you want to keep a local backup of the times.
 
 ### Method B: Manual CSV
@@ -84,7 +89,7 @@ Open the extension popup from your toolbar and choose how you want to set it up:
 
 ## Supported countries for auto-calculation
 
-Argentina, Austria, Belgium, Brazil, Canada, Chile, Colombia, Croatia, Czech Republic, Denmark, Finland, France, Germany, Greece, Hungary, Ireland, Italy, Luxembourg, Mexico, Netherlands, Norway, Poland, Portugal, Romania, Serbia, Slovakia, Slovenia, Spain, Sweden, Switzerland, United Kingdom, United States.
+Every country and territory, including islands and overseas regions (Faroe Islands, Åland, Greenland, Iceland, Malta, Cyprus, Réunion, Guadeloupe, Puerto Rico, Isle of Man, Jersey…). Large countries include their 300 biggest cities.
 
 ## License
 

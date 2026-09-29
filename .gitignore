@@ -9,3 +9,4 @@ inspect_status.py
 !popup.html
 *LinkedIn_files/
 tests/fixtures/
+tools/.cache/

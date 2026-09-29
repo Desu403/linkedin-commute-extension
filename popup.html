@@ -264,6 +264,8 @@
   }
   .toggle-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
   .num-input { width: 56px !important; padding: 3px 6px !important; text-align: center; }
+  .mode-select { width: auto !important; padding: 3px 24px 3px 6px !important; font-size: 12px !important; background-position: right 6px center !important; }
+  .nowrap { white-space: nowrap; }
   .pill { font-style: normal; font-size: 10px; font-weight: 600; padding: 0 6px; border-radius: 8px; }
   .pill-new { color: var(--accent); background: var(--accent-dim); }
   .count-chip { color: var(--yellow); }
@@ -327,10 +329,19 @@
     <label class="toggle-row"><input type="checkbox" id="prefHideApplied" /> <span>Hide jobs I applied to</span></label>
     <label class="toggle-row"><input type="checkbox" id="prefMarkNew" /> <span>Mark jobs I haven't seen before as <em class="pill pill-new">New</em></span></label>
     <div class="toggle-row">
-      <span>Fade jobs with a commute over</span>
+      <span class="nowrap">Fade commutes over</span>
       <input type="text" id="prefMaxCommute" inputmode="numeric" placeholder="off" class="num-input" />
-      <span>min</span>
+      <span class="nowrap">min by</span>
+      <select id="prefMaxCommuteMode" class="mode-select">
+        <option value="transit">🚆 train</option>
+        <option value="car">🚗 car</option>
+        <option value="cycling">🚴 bike</option>
+        <option value="walking">🚶 walk</option>
+        <option value="fastest">fastest</option>
+      </select>
     </div>
+    <div class="field-label" style="margin-top:8px;">Show commute by</div>
+    <div id="modeToggles"></div>
   </div>
 
   <div class="section">
@@ -498,6 +509,11 @@ Rotterdam,Utrecht,30m</code>
       <select id="countrySelect">
         <option value="">— Select a country —</option>
       </select>
+    </div>
+    <div class="toggle-row" title="Skips cities you'd never commute to, so a fetch uses far fewer API requests">
+      <span>Only cities within</span>
+      <input type="text" id="fetchRadius" inputmode="numeric" placeholder="all" class="num-input" />
+      <span>km of home</span>
     </div>
     <button class="btn btn-accent btn-full" id="fetchBtn" style="margin-top:4px;">Fetch &amp; Apply</button>
     <button class="btn btn-red btn-full" id="stopFetchBtn" style="display:none;margin-top:6px;">Stop</button>
